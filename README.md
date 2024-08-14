@@ -14,7 +14,7 @@ The Solana Game SDK is an Unreal Engine plugin that enables game developers to e
 
 ## Requirements
 
-- Unreal Engine 4.26 or later
+- Unreal Engine 5.2 or later
 - C++ environment set up for Unreal Engine development
 
 ## Installation
