@@ -50,7 +50,7 @@ Example: Creating a wallet and sending SOL
 - `ListItemForSale`: Lists an item (NFT) for sale.
 - `BuyItem`: Purchases a listed item.
 
-For detailed function signatures and usage, please refer to the [API Documentation](link-to-your-detailed-api-docs).
+For detailed function signatures and usage, please refer to the [API Documentation].
 
 ## Configuration
 
