@@ -16,3 +16,5 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Solana|Wallet")
     static FString GetWalletAddress();
 };
+
+//gameName
