@@ -11,7 +11,7 @@
 USTRUCT(BlueprintType)
 struct FWalletInfo
 {
-    GENERATED_BODY()
+    //GENERATED_BODY()
 
     UPROPERTY(BlueprintReadOnly, Category = "Solana|Wallet")
     FString PublicKey;
