@@ -41,9 +41,11 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Solana|Wallet")
     static bool ExportWallet(FString& OutPrivateKey);
 
+
 private:
     static FWalletInfo CurrentWallet;
     static FString SolanaRPCUrl;
 
     static TSharedPtr<FJsonObject> SendRPCRequest(const FString& Method, const TArray<TSharedPtr<FJsonValue>>& Params);
+
 };
