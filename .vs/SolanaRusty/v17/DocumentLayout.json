@@ -1,0 +1,122 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "D:\\Github\\SolanaRusty\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaWallet.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaWallet.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public\\SolanaWallet.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public\\SolanaWallet.h||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaMarketplace.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaMarketplace.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaNFT.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaNFT.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaTransactions.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaTransactions.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaGameSDK.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaGameSDK.cpp||{D0E1A5C6-B359-4E41-9B60-3365922C2A22}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 3,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "SolanaWallet.h",
+              "DocumentMoniker": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public\\SolanaWallet.h",
+              "RelativeDocumentMoniker": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public\\SolanaWallet.h",
+              "ToolTip": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public\\SolanaWallet.h",
+              "RelativeToolTip": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public\\SolanaWallet.h",
+              "ViewState": "AQIAAAMAAAAAAAAAAAAAAAsAAAASAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000680|",
+              "WhenOpened": "2024-08-21T13:49:32.046Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "SolanaNFT.cpp",
+              "DocumentMoniker": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaNFT.cpp",
+              "RelativeDocumentMoniker": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaNFT.cpp",
+              "ToolTip": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaNFT.cpp",
+              "RelativeToolTip": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaNFT.cpp",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2024-08-21T13:49:26.842Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "SolanaTransactions.cpp",
+              "DocumentMoniker": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaTransactions.cpp",
+              "RelativeDocumentMoniker": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaTransactions.cpp",
+              "ToolTip": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaTransactions.cpp",
+              "RelativeToolTip": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaTransactions.cpp",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2024-08-21T13:49:24.644Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "SolanaWallet.cpp",
+              "DocumentMoniker": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaWallet.cpp",
+              "RelativeDocumentMoniker": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaWallet.cpp",
+              "ToolTip": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaWallet.cpp",
+              "RelativeToolTip": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaWallet.cpp",
+              "ViewState": "AQIAACcAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2024-08-21T13:48:17.302Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "SolanaMarketplace.cpp",
+              "DocumentMoniker": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaMarketplace.cpp",
+              "RelativeDocumentMoniker": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaMarketplace.cpp",
+              "ToolTip": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaMarketplace.cpp",
+              "RelativeToolTip": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaMarketplace.cpp",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2024-08-21T13:48:12.112Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "SolanaGameSDK.cpp",
+              "DocumentMoniker": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaGameSDK.cpp",
+              "RelativeDocumentMoniker": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaGameSDK.cpp",
+              "ToolTip": "D:\\Github\\SolanaRusty\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaGameSDK.cpp",
+              "RelativeToolTip": "Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private\\SolanaGameSDK.cpp",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000677|",
+              "WhenOpened": "2024-08-21T13:48:06.553Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

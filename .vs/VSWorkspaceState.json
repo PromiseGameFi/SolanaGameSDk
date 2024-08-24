@@ -1,0 +1,14 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\Plugins",
+    "\\Plugins\\SolanaGameSDK",
+    "\\Plugins\\SolanaGameSDK\\Resources",
+    "\\Plugins\\SolanaGameSDK\\Source",
+    "\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK",
+    "\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Private",
+    "\\Plugins\\SolanaGameSDK\\Source\\SolanaGameSDK\\Public"
+  ],
+  "SelectedNode": "\\Plugins",
+  "PreviewInSolutionExplorer": false
+}
