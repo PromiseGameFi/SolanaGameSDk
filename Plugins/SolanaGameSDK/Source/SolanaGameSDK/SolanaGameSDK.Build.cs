@@ -19,7 +19,19 @@ public class SolanaGameSDK : ModuleRules
             }
         );
 
-      
+        PublicDependencyModuleNames.AddRange(
+            new string[]
+            {
+                "Core",
+                "CoreUObject",
+                "Engine",
+                "InputCore",
+                "Http",
+                "Json",
+                "JsonUtilities"
+            }
+        );
+
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
