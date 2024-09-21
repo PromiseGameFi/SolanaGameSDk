@@ -20,9 +20,7 @@ void USolanaMarketplace::ListItemForSale(FString ItemID, float Price, const FStr
 
 void USolanaMarketplace::BuyItem(FString ItemID, const FString& Callback)
 {
-    // Implement item buying logic here
-    // This would involve creating a purchase instruction, signing it, and sending it to the network
-    // For now, we'll just simulate an HTTP request like in ListItemForSale
+
 }
 
 void USolanaMarketplace::OnResponseReceived(FHttpRequestPtr Request, FHttpResponsePtr Response, bool bWasSuccessful, FString Callback)
