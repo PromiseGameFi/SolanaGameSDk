@@ -1,6 +1,15 @@
 #include "SolanaMarketplace.h"
 #include "Http.h"
 
+void USolanaMarketplace::ListItemForSale(FString ItemID, float Price, const FString& Callback)
+{
+   
+
+    FString JsonString = FString::Printf(TEXT("{\"method\":\"listItem\",\"params\":[\"%s\",%f]}"), *ItemID, Price);
+    Request->SetContentAsString(JsonString);
+
+    Request->ProcessRequest();
+}
 
 void USolanaMarketplace::BuyItem(FString ItemID, const FString& Callback)
 {
