@@ -12,7 +12,10 @@ void USolanaMarketplace::ListItemForSale(FString ItemID, float Price, const FStr
     Request->SetVerb("POST");
     Request->SetHeader("Content-Type", "application/json");
 
-   
+    FString JsonString = FString::Printf(TEXT("{\"method\":\"listItem\",\"params\":[\"%s\",%f]}"), *ItemID, Price);
+    Request->SetContentAsString(JsonString);
+
+    Request->ProcessRequest();
 }
 
 void USolanaMarketplace::BuyItem(FString ItemID, const FString& Callback)
