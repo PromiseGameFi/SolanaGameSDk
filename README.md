@@ -12,39 +12,7 @@ The Solana Game SDK is an Unreal Engine plugin that enables game developers to e
 - **Marketplace Functionality**: List items for sale and facilitate purchases using Solana.
 - **Blueprint Support**: All functions are exposed to Blueprints for easy integration without C++ coding.
 
-## Requirements
-
-- Unreal Engine 5.2 or later
-- C++ environment set up for Unreal Engine development
-
-## Installation
-
-1. Clone this repository or download the latest release.
-2. Copy the `SolanaGameSDK` folder into your Unreal Engine project's `Plugins` directory.
-3. Restart the Unreal Editor if it's currently running.
-4. Enable the plugin in your project settings under the Plugins section.
-
-## Quick Start
-
-1. In your Unreal project, create a new Blueprint or open an existing one.
-2. Right-click in the Blueprint graph and search for "Solana" to see available functions.
-3. Use the provided nodes to interact with the Solana blockchain.
-
-Example: Creating a wallet and sending SOL
-
-## API Reference
-
-### Wallet Management
-- `CreateWallet`: Creates a new Solana wallet.
-- `GetWalletAddress`: Retrieves the current wallet address.
-
-### Transactions
-- `SendSOL`: Sends SOL to a specified address.
-- `SendToken`: Sends SPL tokens to a specified address.
-
-### NFT Operations
-- `MintNFT`: Mints a new NFT with specified metadata.
-- `TransferNFT`: Transfers an NFT to another address.
+nother address.
 
 ### Marketplace
 - `ListItemForSale`: Lists an item (NFT) for sale.
