@@ -6,13 +6,7 @@ The Solana Game SDK is an Unreal Engine plugin that enables game developers to e
 
 ## Features
 
-- **Wallet Management**: Create and manage Solana wallets within your game.
-- **Token Transactions**: Send and receive SOL and other SPL tokens.
-- **NFT Integration**: Mint, transfer, and manage NFTs directly from your game.
-- **Marketplace Functionality**: List items for sale and facilitate purchases using Solana.
-- **Blueprint Support**: All functions are exposed to Blueprints for easy integration without C++ coding.
-
-## Requirements
+- **Wallet Man
 
 - Unreal Engine 5.2 or later
 - C++ environment set up for Unreal Engine development
