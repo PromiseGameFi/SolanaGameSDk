@@ -42,7 +42,13 @@ Example: Creating a wallet and sending SOL
 - `SendSOL`: Sends SOL to a specified address.
 - `SendToken`: Sends SPL tokens to a specified address.
 
+### NFT Operations
+- `MintNFT`: Mints a new NFT with specified metadata.
+- `TransferNFT`: Transfers an NFT to another address.
 
+### Marketplace
+- `ListItemForSale`: Lists an item (NFT) for sale.
+- `BuyItem`: Purchases a listed item.
 
 For detailed function signatures and usage, please refer to the [API Documentation].
 
