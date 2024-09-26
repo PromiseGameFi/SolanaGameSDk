@@ -79,6 +79,7 @@ The plugin can be configured through the project settings in the Unreal Editor. 
 
 ## Contributing
 
+
 We welcome contributions to the Solana Game SDK! Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
 
 ## License
