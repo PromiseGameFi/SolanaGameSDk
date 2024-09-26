@@ -18,4 +18,5 @@ What makes this Solana Web3 SDK special is its deep integration with the Unreal 
 
 I'm excited to continue developing this SDK and collaborating with the Unreal and Solana communities to push the boundaries of what's possible in blockchain-enabled gaming. Stay tuned for more updates as I work towards making this project open-source in the future!
 
-If you're seeing my post for the first time, my name is Promise Emmanuel. I'm a game developer and blockchain engineer, and I'd love to connect with you.
+
+If you're seeing my Github Profile for the first time, my name is Promise Emmanuel. I'm a game developer and blockchain engineer, and I'd love to connect with you.
