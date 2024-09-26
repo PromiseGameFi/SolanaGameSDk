@@ -4,7 +4,7 @@
 	"VersionName": "1.0",
 	"FriendlyName": "Solana Game SDK",
 	"Description": "A plugin for integrating Solana blockchain features into Unreal Engine games",
-	"Category": "Blockchain",
+	"Category": "BlockchainSDK",
 	"CreatedBy": "Promise Emmanuel",
 	"CreatedByURL": "",
 	"DocsURL": "",
