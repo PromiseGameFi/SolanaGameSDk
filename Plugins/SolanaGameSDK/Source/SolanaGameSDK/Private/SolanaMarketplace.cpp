@@ -9,13 +9,7 @@ void USolanaMarketplace::ListItemForSale(FString ItemID, float Price, const FStr
     TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
     Request->OnProcessRequestComplete().BindStatic(&USolanaMarketplace::OnResponseReceived, Callback);
     Request->SetURL("https://api.mainnet-beta.solana.com");
-    Request->SetVerb("POST");
-    Request->SetHeader("Content-Type", "application/json");
-
-    FString JsonString = FString::Printf(TEXT("{\"method\":\"listItem\",\"params\":[\"%s\",%f]}"), *ItemID, Price);
-    Request->SetContentAsString(JsonString);
-
-    Request->ProcessRequest();
+    R
 }
 
 
