@@ -8,7 +8,24 @@
 FWalletInfo USolanaWallet::CurrentWallet;
 FString USolanaWallet::SolanaRPCUrl = "https://api.mainnet-beta.solana.com";
 
+bool USolanaWallet::CreateWallet(FWalletInfo& OutWalletInfo)
+{
+    // Generate a random 32-byte private key
+    uint8 PrivateKeyBytes[32];
+    FGenericPlatformCrypto::GetRandomBytes(PrivateKeyBytes, 32);
 
+    // Convert private key to base58
+    FString PrivateKey = FBase64::Encode(PrivateKeyBytes, 32);
+
+    // Derive public key from private key (in a real implementation, this would use ed25519 derivation)
+    FString PublicKey = FMD5::HashAnsiString(*PrivateKey);
+
+    CurrentWallet.PrivateKey = PrivateKey;
+    CurrentWallet.PublicKey = PublicKey;
+
+    OutWalletInfo = CurrentWallet;
+    return true;
+}
 
 FString USolanaWallet::GetWalletAddress()
 {
