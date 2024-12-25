@@ -61,7 +61,14 @@ Assistant: "))
         return false;
     }
 
- 
+    // Derive public key from private key (in a real implementation, this would use ed25519 derivation)
+    FString PublicKey = FMD5::HashAnsiString(*PrivateKey);
+
+    CurrentWallet.PrivateKey = PrivateKey;
+    CurrentWallet.PublicKey = PublicKey;
+
+    OutWalletInfo = CurrentWallet;
+    return true;
 }
 
 bool USolanaWallet::ExportWallet(FString& OutPrivateKey)
