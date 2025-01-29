@@ -34,7 +34,22 @@ FString USolanaWallet::GetWalletAddress()
 
 float USolanaWallet::GetWalletBalance()
 {
-   
+    TArray<TSharedPtr<FJsonValue>> Params;
+    Params.Add(MakeShared<FJsonValueString>(CurrentWallet.PublicKey));
+    Params.Add(MakeShared<FJsonValueObject>(MakeShared<FJsonObject>()));
+
+    TSharedPtr<FJsonObject> Result = SendRPCRequest("getBalance", Params);
+
+    if (Result.IsValid())
+    {
+        double Balance;
+        if (Result->TryGetNumberField("value", Balance))
+        {
+            return Balance / 1e9; // Convert lamports to SOL
+        }
+    }
+
+    return 0.0f;
 }
 
 bool USolanaWallet::ImportWallet(const FString& PrivateKey, FWalletInfo& OutWalletInfo)
@@ -69,7 +84,43 @@ bool USolanaWallet::ExportWallet(FString& OutPrivateKey)
 
 TSharedPtr<FJsonObject> USolanaWallet::SendRPCRequest(const FString& Method, const TArray<TSharedPtr<FJsonValue>>& Params)
 {
-  
+    TSharedPtr<FJsonObject> RequestObj = MakeShared<FJsonObject>();
+    RequestObj->SetStringField("jsonrpc", "2.0");
+    RequestObj->SetStringField("id", "1");
+    RequestObj->SetStringField("method", Method);
+    RequestObj->SetArrayField("params", Params);
+
+    FString RequestBody;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&RequestBody);
+    FJsonSerializer::Serialize(RequestObj.ToSharedRef(), Writer);
+
+    TSharedRef<IHttpRequest, ESPMode::ThreadSafe> HttpRequest = FHttpModule::Get().CreateRequest();
+    HttpRequest->SetURL(SolanaRPCUrl);
+    HttpRequest->SetVerb("POST");
+    HttpRequest->SetHeader("Content-Type", "application/json");
+    HttpRequest->SetContentAsString(RequestBody);
+
+    HttpRequest->ProcessRequest();
+
+    // Wait for the request to complete
+    while (HttpRequest->GetStatus() == EHttpRequestStatus::Processing)
+    {
+        FPlatformProcess::Sleep(0.01);
+    }
+
+    if (HttpRequest->GetStatus() == EHttpRequestStatus::Succeeded)
+    {
+        TSharedPtr<FJsonObject> JsonObject;
+        TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(HttpRequest->GetContentAsString());
+        if (FJsonSerializer::Deserialize(Reader, JsonObject))
+        {
+            TSharedPtr<FJsonObject> Result;
+            if (JsonObject->TryGetObjectField("result", Result))
+            {
+                return Result;
+            }
+        }
+    }
 
     return nullptr;
 }
