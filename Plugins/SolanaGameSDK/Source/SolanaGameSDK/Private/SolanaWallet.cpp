@@ -6,6 +6,7 @@
 #include "GenericPlatform/GenericPlatformCrypto.h"
 
 FWalletInfo USolanaWallet::CurrentWallet;
+//This is a test rpc url, confirm for the correct RPC
 FString USolanaWallet::SolanaRPCUrl = "https://api.mainnet-beta.solana.com";
 
 bool USolanaWallet::CreateWallet(FWalletInfo& OutWalletInfo)
