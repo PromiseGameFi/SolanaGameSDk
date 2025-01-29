@@ -34,22 +34,7 @@ FString USolanaWallet::GetWalletAddress()
 
 float USolanaWallet::GetWalletBalance()
 {
-    TArray<TSharedPtr<FJsonValue>> Params;
-    Params.Add(MakeShared<FJsonValueString>(CurrentWallet.PublicKey));
-    Params.Add(MakeShared<FJsonValueObject>(MakeShared<FJsonObject>()));
-
-    TSharedPtr<FJsonObject> Result = SendRPCRequest("getBalance", Params);
-
-    if (Result.IsValid())
-    {
-        double Balance;
-        if (Result->TryGetNumberField("value", Balance))
-        {
-            return Balance / 1e9; // Convert lamports to SOL
-        }
-    }
-
-    return 0.0f;
+   
 }
 
 bool USolanaWallet::ImportWallet(const FString& PrivateKey, FWalletInfo& OutWalletInfo)
