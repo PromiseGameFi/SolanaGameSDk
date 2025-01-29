@@ -68,6 +68,7 @@ Assistant: "))
     CurrentWallet.PublicKey = PublicKey;
 
     OutWalletInfo = CurrentWallet;
+
     return true;
 }
 
