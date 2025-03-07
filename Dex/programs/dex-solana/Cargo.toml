@@ -1,0 +1,25 @@
+[package]
+name = "dex-solana"
+version = "0.1.0"
+description = "Created with Anchor"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "dex_solana"
+
+[features]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+
+[dependencies]
+anchor-lang = { version = "0.30.0", features = ["init-if-needed"] }
+anchor-spl = "0.30.0"
+arrayref = "0.3.7"
+num_enum = "0.7.2"
+bytemuck = "^1"
