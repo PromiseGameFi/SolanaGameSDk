@@ -43,8 +43,7 @@ The SOLANA SOR (Smart Order Router) SmartContract repository implements a decent
 
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/okx/WEB3-DEX-SOLANA-OPENSOURCE.git
-   cd WEB3-DEX-SOLANA-OPENSOURCE
+  cd Dex
    ```
 
 2. **Install Dependencies**:
