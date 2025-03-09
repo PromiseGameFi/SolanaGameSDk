@@ -1,0 +1,27 @@
+{
+  "name": "seda-request-starter-kit",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "VARIANT": "1.1.20"
+    }
+  },
+  "features": {
+    "node": {
+        "version": "lts",
+        "nodeGypDependencies": true
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "EditorConfig.EditorConfig",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "dtsvet.vscode-wasm"
+      ]
+    }
+  },
+  "postCreateCommand": "bun install"
+}
