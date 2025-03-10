@@ -25,7 +25,7 @@ float USedaPriceFeed::RequestPriceData()
 
     // Create request parameters
     FSedaRequestParams Params;
-    Params.OracleId = TEXT("price_feed");
+    Params.OracleId = TEXT("price_feed"); 
     Params.TimeoutSeconds = 30;
 
     // Make the async request
