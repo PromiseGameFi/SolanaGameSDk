@@ -1,12 +1,18 @@
-public class YourGame : ModuleRules
+using UnrealBuildTool;
+
+public class GameData : ModuleRules
 {
-    public YourGame(ReadOnlyTargetRules Target) : base(Target)
+    public GameData(ReadOnlyTargetRules Target) : base(Target)
     {
-        PublicDependencyModuleNames.AddRange(new string[] { 
-            "Core", 
-            "CoreUObject", 
-            "Engine",
-            "SedaSDK" // Add the SEDA SDK module
-        });
+        PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
+        
+        PublicDependencyModuleNames.AddRange(
+            new string[]
+            {
+                "Core",
+                "CoreUObject",
+                "Engine"
+            }
+        );
     }
 }
