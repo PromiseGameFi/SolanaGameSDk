@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "seda-data-proxy.fullname" . }}-config
+data:
+  config.json: |
+    {{ .Values.sedaProxyConfig | toJson }}

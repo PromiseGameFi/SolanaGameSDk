@@ -1,0 +1,32 @@
+services:
+  seda-data-proxy:
+    build:
+      context: ../..
+      dockerfile: .build/docker/Dockerfile
+      args:
+        TARGET_ARCH: ${TARGET_ARCH:-bun-linux-arm64}
+    ports:
+      - "5384:5384"
+    ### Provide the private key if available
+    # environment:
+    #   # Provide the private key if available
+    #   SEDA_DATA_PROXY_PRIVATE_KEY: ${SEDA_DATA_PROXY_PRIVATE_KEY}
+    #
+    ### Provide the config file if available
+    volumes:
+    - type: bind
+      source: ../../config.json
+      target: /app/config.json
+      read_only: true
+      consistency: cached
+    - type: bind
+      source: ../../data-proxy-private-key.json
+      target: /app/data-proxy-private-key.json
+      read_only: true
+      consistency: cached
+    networks:
+      - proxy-network
+
+networks:
+  proxy-network:
+    driver: bridge
