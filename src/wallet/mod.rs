@@ -1,7 +1,7 @@
 use crate::crypto::{KeySplitter, Share};
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{Address, U256, TransactionRequest};
-use ethers::types::transaction::eip2718::TypedTransaction;
+use ethers::types::{Address, U256, TransactionRequest, TypedTransaction};
+use ethers::middleware::SignerMiddleware;
 use anyhow::Result;
 
 pub struct MPCWallet {
@@ -60,4 +60,4 @@ impl MPCWallet {
         
         Ok(signature.to_vec())
     }
-}
+} 

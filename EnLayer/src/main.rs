@@ -1,9 +1,24 @@
-use mpc_tss_wallet::{MPCWallet, EthereumClient};
+use dotenv::dotenv;
+use std::env;
+use mpc_tss_wallet::{MPCWallet, ethereum::EthereumClient};
 use ethers::types::{Address, U256};
 use std::str::FromStr;
+use anyhow::Result;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> Result<()> {
+    // Load environment variables from .env file
+    dotenv().ok();
+    
+    // Get RPC URL from environment
+    let rpc_url = env::var("ETHEREUM_RPC_URL")
+        .expect("ETHEREUM_RPC_URL must be set");
+
+    // Initialize Ethereum client
+    let client = EthereumClient::new(&rpc_url).await?;
+    
+    println!("Connected to Ethereum network");
+
     // Test parameters
     let threshold = 2;
     let total_shares = 3;
@@ -22,11 +37,6 @@ async fn main() -> anyhow::Result<()> {
             shares.push(share);
         }
     }
-
-    // Connect to Sepolia
-    let client = EthereumClient::new(
-        "https://sepolia.infura.io/v3/YOUR-PROJECT-ID"
-    ).await?;
 
     // Test transaction parameters
     let to = Address::from_str("0x742d35Cc6634C0532925a3b844Bc454e4438f44e")?;

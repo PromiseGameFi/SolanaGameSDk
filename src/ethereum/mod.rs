@@ -1,6 +1,6 @@
 use ethers::{
     providers::{Provider, Http},
-    types::{Address, U256, TransactionRequest, Bytes},
+    types::{Address, U256, TransactionRequest},
     middleware::Middleware,
 };
 use anyhow::Result;
@@ -25,21 +25,17 @@ impl EthereumClient {
         value: U256,
         signature: Vec<u8>,
     ) -> Result<()> {
-        let _tx = TransactionRequest::new()
+        let tx = TransactionRequest::new()
             .to(to)
             .value(value)
             .from(from);
 
-        let signature_bytes = Bytes::from(signature);
         let pending_tx = self.provider
-            .send_raw_transaction(signature_bytes)
+            .send_raw_transaction(signature.into())
             .await?;
 
-        if let Some(receipt) = pending_tx.await? {
-            println!("Transaction sent: {:?}", receipt.transaction_hash);
-        } else {
-            println!("Transaction pending");
-        }
+        let receipt = pending_tx.await?;
+        println!("Transaction sent: {:?}", receipt.transaction_hash);
 
         Ok(())
     }
@@ -47,4 +43,4 @@ impl EthereumClient {
     pub async fn get_balance(&self, address: Address) -> Result<U256> {
         Ok(self.provider.get_balance(address, None).await?)
     }
-}
+} 

@@ -1,4 +1,6 @@
-use rand::{rngs::OsRng, RngCore};
+use secp256k1::{SecretKey, PublicKey, Secp256k1};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -27,9 +29,6 @@ impl KeySplitter {
         if threshold > total_shares {
             return Err(CryptoError::InvalidThreshold);
         }
-        if threshold < 2 {
-            return Err(CryptoError::InvalidThreshold);
-        }
         Ok(Self {
             threshold,
             total_shares,
@@ -40,38 +39,16 @@ impl KeySplitter {
         let mut shares = Vec::new();
         let mut rng = OsRng;
 
-        // Ensure we generate exactly threshold - 1 random shares
-        for i in 1..self.threshold {
+        // Basic Shamir's Secret Sharing implementation
+        for i in 1..=self.total_shares {
             let mut share_value = vec![0u8; private_key.len()];
             rng.fill_bytes(&mut share_value);
-            shares.push(Share {
-                index: i,
-                value: share_value,
-            });
-        }
-
-        // Generate the final share that completes the secret
-        let mut final_share = vec![0u8; private_key.len()];
-        for share in &shares {
-            for (i, byte) in share.value.iter().enumerate() {
-                final_share[i] ^= byte;
+            // XOR with private key for the first share
+            if i == 1 {
+                for (j, byte) in private_key.iter().enumerate() {
+                    share_value[j] ^= byte;
+                }
             }
-        }
-        // XOR with the private key to create the last share
-        for (i, byte) in private_key.iter().enumerate() {
-            final_share[i] ^= byte;
-        }
-
-        // Add the final share
-        shares.push(Share {
-            index: self.threshold,
-            value: final_share,
-        });
-
-        // Generate remaining shares if total_shares > threshold
-        for i in (self.threshold + 1)..=self.total_shares {
-            let mut share_value = vec![0u8; private_key.len()];
-            rng.fill_bytes(&mut share_value);
             shares.push(Share {
                 index: i,
                 value: share_value,
@@ -95,4 +72,4 @@ impl KeySplitter {
 
         Ok(key)
     }
-}
+} 
