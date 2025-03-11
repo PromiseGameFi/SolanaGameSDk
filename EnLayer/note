@@ -1,0 +1,58 @@
+First, set up your environment:
+ # Create .env file
+echo "ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/PROJECT-ID" > .env   
+
+Generate the shares:
+cargo run --bin generate_shares
+
+Create a signature:
+cargo run --bin create_signature
+
+Send a transaction:
+cargo run --bin send_transaction
+
+Example usage flow:
+
+# 1. Generate shares from a private key
+cargo run --bin generate_shares
+
+# This will create share_1.json, share_2.json, etc.
+
+# 2. Create a signature using the shares
+cargo run --bin create_signature
+
+# This will create signature.bin
+
+# 3. Send a transaction using the signature
+cargo run --bin send_transaction
+
+
+/src/main.rs
+
+1. Generate shares:
+
+    cargo run -- generate-shares --threshold 3 --total-shares 5 --private-key-path ./private_key.bin
+
+2. Create a signature:
+
+  cargo run -- create-signature --threshold 3 --message "Hello, world!" --share-paths share_1.json,share_2.json,share_3.json
+
+3. Send a transaction:
+
+  cargo run -- send-transaction --to-address 0x742d35Cc6634C0532925a3b844Bc454e4438f44e --amount-eth 0.1 --signature-path signature.bin
+
+
+.evnv format 
+
+echo "ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/PROJECT-ID" > .env
+
+openssl rand -hex 32 > private_key.bin
+
+# Generate shares
+cargo run -- generate-shares -t 3 -s 5 -p private_key.bin
+
+# Create signature
+cargo run -- create-signature -t 3 -m "Hello, world!" -s share_1.json,share_2.json,share_3.json
+
+# Send transaction
+cargo run -- send-transaction -t 0x742d35Cc6634C0532925a3b844Bc454e4438f44e -a 0.1 -s signature.bin

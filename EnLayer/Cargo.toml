@@ -4,24 +4,29 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Cryptographic primitives
-curve25519-dalek = "4.1"
-sha2 = "0.10"
-rand = "0.8"
-secp256k1 = "0.27"
-
-# Ethereum interaction
+clap = { version = "4.0", features = ["derive"] }
+dotenv = "0.15"
 ethers = "2.0"
-tokio = { version = "1.28", features = ["full"] }
-
-# Network communication
-tonic = "0.9"
-prost = "0.11"
-
-# Serialization
+rand = "0.8"
+sha2 = "0.10"
+secp256k1 = { version = "0.27", features = ["rand"] }
+anyhow = "1.0"
+thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Error handling
-thiserror = "1.0"
-anyhow = "1.0"
+[[bin]]
+name = "eth_mpc_threshold"
+path = "src/main.rs"
+
+[[bin]]
+name = "generate_shares"
+path = "src/bin/generate_shares.rs"
+
+[[bin]]
+name = "create_signature"
+path = "src/bin/create_signature.rs"
+
+[[bin]]
+name = "send_transaction"
+path = "src/bin/send_transaction.rs"
