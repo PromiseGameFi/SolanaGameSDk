@@ -6,7 +6,7 @@
 #include "SedaPriceFeed.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
-class YOURGAME_API USedaPriceFeed : public UActorComponent
+class GameData_API USedaPriceFeed : public UActorComponent
 {
     GENERATED_BODY()
 
