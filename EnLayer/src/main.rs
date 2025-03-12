@@ -133,8 +133,8 @@ async fn main() -> Result<()> {
             to,
             value,
             share_index,
-            total_shares,
-            threshold,
+            total_shares: _total_shares,
+            threshold: _threshold,
         } => {
             let rpc_url = env::var("ETHEREUM_RPC_URL").expect("ETHEREUM_RPC_URL must be set");
             let _client = EthereumClient::new(&rpc_url).await?;
@@ -174,19 +174,14 @@ async fn main() -> Result<()> {
             let mut expected_address = None;
             for sig_path in signatures {
                 println!("Attempting to read signature file: {}", sig_path);
-                let wrapper_content = fs::read_to_string(sig_path)
-                    .map_err(|e| anyhow::anyhow!("Failed to read signature file {}: {:?}", sig_path, e))?;
+                let wrapper_content = fs::read_to_string(sig_path)?;
                 let wrapper: Vec<ShareWrapper> = serde_json::from_str(&wrapper_content)?;
                 let share_filename = sig_path.replace("signature_", "share_");
                 let share_path = format!("shares/{}", share_filename);
                 println!("Attempting to read share file: {}", share_path);
-                let share_file_content = fs::read_to_string(&share_path)
-                    .map_err(|e| anyhow::anyhow!("Failed to read share file {}: {:?}", share_path, e))?;
+                let share_file_content = fs::read_to_string(&share_path)?;
                 let share_file: ShareFile = serde_json::from_str(&share_file_content)?;
-                if !share_file.address.starts_with("0x")
-                    || share_file.address.len() != 42
-                    || !share_file.address[2..].chars().all(|c| c.is_ascii_hexdigit())
-                {
+                if !share_file.address.starts_with("0x") || share_file.address.len() != 42 {
                     return Err(anyhow::anyhow!(
                         "Invalid address format in share file: {}",
                         share_file.address
@@ -221,81 +216,86 @@ async fn main() -> Result<()> {
 
             let gas_price = client.get_gas_price().await?;
             let gas_limit = U256::from(21000);
-            let total_cost = value_wei + (gas_limit * gas_price);
+            let gas_cost = gas_price * gas_limit;
+            let total_cost = value_wei + gas_cost;
             println!("Gas price: {} Wei", gas_price);
-            println!("Gas cost: {} Wei", gas_limit * gas_price);
+            println!("Gas cost: {} Wei", gas_cost);
             println!("Total cost: {} Wei ({} ETH)", total_cost, total_cost.as_u128() as f64 / 1e18);
-
-            if balance < total_cost {
-                return Err(anyhow::anyhow!(
-                    "Insufficient funds: balance {} Wei < total cost {} Wei",
-                    balance,
-                    total_cost
-                ));
-            }
 
             let nonce = client.get_transaction_count(sender_address).await?;
             println!("Using nonce: {}", nonce);
 
-            println!("Signing transaction with {} shares...", shares.len());
-            let signature = wallet.sign_transaction(&shares, to_address, value_wei, nonce, 11155111).await?;
+            let max_attempts = 3;
+            for attempt in 1..=max_attempts {
+                let latest_balance = client.get_balance(sender_address).await?;
+                println!("Attempt {}: Latest balance before signing: {} Wei", attempt, latest_balance);
+                if latest_balance < total_cost {
+                    if attempt == max_attempts {
+                        return Err(anyhow::anyhow!(
+                            "Insufficient funds after {} attempts: {} Wei < {} Wei",
+                            max_attempts,
+                            latest_balance,
+                            total_cost
+                        ));
+                    }
+                    println!("Funds insufficient, retrying in 5 seconds...");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
 
-            if signature.len() != 65 {
-                return Err(anyhow::anyhow!(
-                    "Expected 65-byte signature, got {} bytes",
-                    signature.len()
-                ));
+                println!("Signing transaction with {} shares...", shares.len());
+                let signature = wallet.sign_transaction(&shares, to_address, value_wei, nonce, 11155111).await?;
+                if signature.len() != 65 {
+                    return Err(anyhow::anyhow!(
+                        "Expected 65-byte signature, got {} bytes",
+                        signature.len()
+                    ));
+                }
+
+                println!("Raw signature: {:?}", hex::encode(&signature));
+                let r = U256::from_big_endian(&signature[0..32]);
+                let s = U256::from_big_endian(&signature[32..64]);
+                let v_raw = signature[64] as u64;
+                println!("v_raw from signature: {}", v_raw);
+
+                // Since v_raw = 114 is invalid, try both recovery IDs (0 and 1)
+                let chain_id = 11155111u64;
+                for recovery_id in 0..=1 {
+                    let v_new = chain_id * 2 + 35 + recovery_id;
+                    println!("Trying v = {} with recovery_id = {}", v_new, recovery_id);
+
+                    let tx_rlp = {
+                        let mut rlp = rlp::RlpStream::new_list(9);
+                        rlp.append(&nonce);
+                        rlp.append(&gas_price);
+                        rlp.append(&gas_limit);
+                        rlp.append(&to_address);
+                        rlp.append(&value_wei);
+                        rlp.append(&Vec::<u8>::new()); // data
+                        rlp.append(&U256::from(v_new));
+                        rlp.append(&r);
+                        rlp.append(&s);
+                        rlp.out().to_vec()
+                    };
+
+                    println!("RLP-encoded tx: {:?}", hex::encode(&tx_rlp));
+                    match client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp.clone()).await {
+                        Ok(_) => {
+                            println!("Transaction sent successfully with v = {}!", v_new);
+                            return Ok(()); // Exit on success
+                        }
+                        Err(e) => {
+                            println!("Failed with v = {}: {}", v_new, e);
+                            if recovery_id == 1 {
+                                return Err(anyhow::anyhow!(
+                                    "Transaction failed with both recovery IDs: {}", e
+                                ));
+                            }
+                            // Try the next recovery ID
+                        }
+                    }
+                }
             }
-
-            let r = ethers::types::H256::from_slice(&signature[0..32]);
-            let s = ethers::types::H256::from_slice(&signature[32..64]);
-            let v_old = signature[64] as u64;
-            let assumed_chain_id = 39;
-            let recovery_id = v_old - assumed_chain_id * 2 - 35;
-
-            if recovery_id != 0 && recovery_id != 1 {
-                println!("Invalid recovery ID: {}, assuming v_old is raw recovery ID", recovery_id);
-                let recovery_id = if v_old <= 1 { v_old } else { return Err(anyhow::anyhow!("Invalid recovery ID from signature: {}", v_old)) };
-                let v_new = 11155111u64 * 2 + 35 + recovery_id;
-
-                let tx_rlp = {
-                    let mut rlp = rlp::RlpStream::new_list(9);
-                    rlp.append(&nonce);
-                    rlp.append(&gas_price);
-                    rlp.append(&gas_limit);
-                    rlp.append(&to_address);
-                    rlp.append(&value_wei);
-                    rlp.append(&Vec::<u8>::new());
-                    rlp.append(&U256::from(v_new));
-                    rlp.append(&r);
-                    rlp.append(&s);
-                    rlp.out().to_vec()
-                };
-
-                println!("RLP-encoded tx: {:?}", hex::encode(&tx_rlp));
-                client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp).await?;
-            } else {
-                let v_new = 11155111u64 * 2 + 35 + recovery_id;
-
-                let tx_rlp = {
-                    let mut rlp = rlp::RlpStream::new_list(9);
-                    rlp.append(&nonce);
-                    rlp.append(&gas_price);
-                    rlp.append(&gas_limit);
-                    rlp.append(&to_address);
-                    rlp.append(&value_wei);
-                    rlp.append(&Vec::<u8>::new());
-                    rlp.append(&U256::from(v_new));
-                    rlp.append(&r);
-                    rlp.append(&s);
-                    rlp.out().to_vec()
-                };
-
-                println!("RLP-encoded tx: {:?}", hex::encode(&tx_rlp));
-                client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp).await?;
-            }
-
-            println!("Transaction sent successfully!");
         }
     }
 

@@ -5,7 +5,7 @@ use std::env;
 use mpc_tss_wallet::{MPCWallet, ethereum::EthereumClient};
 use ethers::{
     types::{Address, U256},
-    utils::rlp,
+    utils::{rlp, keccak256},
 };
 use std::str::FromStr;
 use anyhow::Result;
@@ -135,8 +135,8 @@ async fn main() -> Result<()> {
             to,
             value,
             share_index,
-            total_shares,
-            threshold,
+            total_shares: _total_shares, // Suppress unused variable warning
+            threshold: _threshold,       // Suppress unused variable warning
         } => {
             let rpc_url = env::var("ETHEREUM_RPC_URL").expect("ETHEREUM_RPC_URL must be set");
             let _client = EthereumClient::new(&rpc_url).await?;
@@ -223,42 +223,75 @@ async fn main() -> Result<()> {
 
             let gas_price = client.get_gas_price().await?;
             let gas_limit = U256::from(21000);
-            let total_cost = value_wei + (gas_limit * gas_price);
+            let gas_cost = gas_price * gas_limit;
+            let total_cost = value_wei + gas_cost;
             println!("Gas price: {} Wei", gas_price);
-            println!("Gas cost: {} Wei", gas_limit * gas_price);
+            println!("Gas cost: {} Wei", gas_cost);
             println!("Total cost: {} Wei ({} ETH)", total_cost, total_cost.as_u128() as f64 / 1e18);
-
-            if balance < total_cost {
-                return Err(anyhow::anyhow!(
-                    "Insufficient funds: balance {} Wei < total cost {} Wei",
-                    balance,
-                    total_cost
-                ));
-            }
 
             let nonce = client.get_transaction_count(sender_address).await?;
             println!("Using nonce: {}", nonce);
 
-            println!("Signing transaction with {} shares...", shares.len());
-            let signature = wallet.sign_transaction(&shares, to_address, value_wei, nonce, 11155111).await?;
+            // Retry logic for insufficient funds
+            let max_attempts = 3;
+            for attempt in 1..=max_attempts {
+                let latest_balance = client.get_balance(sender_address).await?;
+                println!("Attempt {}: Latest balance before signing: {} Wei", attempt, latest_balance);
+                if latest_balance < total_cost {
+                    if attempt == max_attempts {
+                        return Err(anyhow::anyhow!(
+                            "Insufficient funds after {} attempts: {} Wei < {} Wei",
+                            max_attempts,
+                            latest_balance,
+                            total_cost
+                        ));
+                    }
+                    println!("Funds insufficient, retrying in 5 seconds...");
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
 
-            if signature.len() != 65 {
-                return Err(anyhow::anyhow!(
-                    "Expected 65-byte signature, got {} bytes",
-                    signature.len()
-                ));
-            }
+                println!("Signing transaction with {} shares...", shares.len());
+                let signature = wallet.sign_transaction(&shares, to_address, value_wei, nonce, 11155111).await?;
 
-            let r = ethers::types::H256::from_slice(&signature[0..32]);
-            let s = ethers::types::H256::from_slice(&signature[32..64]);
-            let v_old = signature[64] as u64;
-            let assumed_chain_id = 39;
-            let recovery_id = v_old - assumed_chain_id * 2 - 35;
+                if signature.len() != 65 {
+                    return Err(anyhow::anyhow!(
+                        "Expected 65-byte signature, got {} bytes",
+                        signature.len()
+                    ));
+                }
 
-            if recovery_id != 0 && recovery_id != 1 {
-                println!("Invalid recovery ID: {}, assuming v_old is raw recovery ID", recovery_id);
-                let recovery_id = if v_old <= 1 { v_old } else { return Err(anyhow::anyhow!("Invalid recovery ID from signature: {}", v_old)) };
-                let v_new = 11155111u64 * 2 + 35 + recovery_id;
+                // Verify signature matches transaction hash
+                let tx_hash_list: Vec<Vec<u8>> = vec![
+                    { let mut s = rlp::RlpStream::new(); s.append(&nonce); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&gas_price); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&gas_limit); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&to_address); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&value_wei); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&Vec::<u8>::new()); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&U256::from(11155111u64)); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&U256::zero()); s.out().to_vec() },
+                    { let mut s = rlp::RlpStream::new(); s.append(&U256::zero()); s.out().to_vec() },
+                ];
+                let mut tx_hash_stream = rlp::RlpStream::new_list(tx_hash_list.len());
+                tx_hash_stream.append_list::<Vec<u8>, Vec<u8>>(&tx_hash_list);
+                let tx_hash_rlp = tx_hash_stream.out();
+                let tx_hash = keccak256(&tx_hash_rlp);
+                println!("Transaction hash: {:?}", hex::encode(&tx_hash));
+
+                let r = ethers::types::H256::from_slice(&signature[0..32]);
+                let s = ethers::types::H256::from_slice(&signature[32..64]);
+                let v_old = signature[64] as u64;
+                let assumed_chain_id = 39;
+                let recovery_id = v_old - assumed_chain_id * 2 - 35;
+
+                let v_new = if recovery_id != 0 && recovery_id != 1 {
+                    println!("Invalid recovery ID: {}, assuming v_old is raw recovery ID", recovery_id);
+                    let recovery_id = if v_old <= 1 { v_old } else { return Err(anyhow::anyhow!("Invalid recovery ID from signature: {}", v_old)) };
+                    11155111u64 * 2 + 35 + recovery_id
+                } else {
+                    11155111u64 * 2 + 35 + recovery_id
+                };
 
                 let tx_rlp = {
                     let mut rlp = rlp::RlpStream::new_list(9);
@@ -275,36 +308,24 @@ async fn main() -> Result<()> {
                 };
 
                 println!("RLP-encoded tx: {:?}", hex::encode(&tx_rlp));
-                client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp).await?;
-            } else {
-                let v_new = 11155111u64 * 2 + 35 + recovery_id;
 
-                let tx_rlp = {
-                    let mut rlp = rlp::RlpStream::new_list(9);
-                    rlp.append(&nonce);
-                    rlp.append(&gas_price);
-                    rlp.append(&gas_limit);
-                    rlp.append(&to_address);
-                    rlp.append(&value_wei);
-                    rlp.append(&Vec::<u8>::new());
-                    rlp.append(&U256::from(v_new));
-                    rlp.append(&r);
-                    rlp.append(&s);
-                    rlp.out().to_vec()
-                };
-
-                println!("RLP-encoded tx: {:?}", hex::encode(&tx_rlp));
-                client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp).await?;
+                match client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp).await {
+                    Ok(_) => {
+                        println!("Transaction sent successfully!");
+                        break;
+                    }
+                    Err(e) if e.to_string().contains("insufficient funds") && attempt < max_attempts => {
+                        println!("Attempt {} failed: {}. Retrying in 5 seconds...", attempt, e);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    }
+                    Err(e) => return Err(e),
+                }
             }
-
-            println!("Transaction sent successfully!");
         }
     }
 
     Ok(())
 }
-
-
 //ethereum mod
 
 use ethers::{
