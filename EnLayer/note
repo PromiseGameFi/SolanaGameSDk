@@ -1,6 +1,7 @@
 First, set up your environment:
  # Create .env file
 echo "ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/PROJECT-ID" > .env   
+./private_key.bin
 
 Generate the shares:
 cargo run --bin generate_shares
@@ -31,8 +32,7 @@ cargo run --bin send_transaction
 
 1. Generate shares:
 
-    cargo run -- generate-shares --threshold 3 --total-shares 5 --private-key-path ./private_key.bin
-
+    cargo run -- generate-shares --threshold 3 --total-shares 5 --private-key-path 
 2. Create a signature:
 
   cargo run -- create-signature --threshold 3 --message "Hello, world!" --share-paths share_1.json,share_2.json,share_3.json

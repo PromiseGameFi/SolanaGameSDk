@@ -42,18 +42,22 @@ impl MPCWallet {
         to: Address,
         value: U256,
         nonce: U256,
+        chain_id: u64,
     ) -> Result<Vec<u8>> {
         // Reconstruct private key from shares
         let private_key = KeySplitter::reconstruct_key(shares, self.threshold)?;
         
         // Create wallet from reconstructed key
-        let wallet = LocalWallet::from_bytes(&private_key)?;
+        let wallet = LocalWallet::from_bytes(&private_key)?
+            .with_chain_id(chain_id);
         
         // Create and sign transaction
         let tx = TransactionRequest::new()
             .to(to)
+            .from(self.address)
             .value(value)
-            .nonce(nonce);
+            .nonce(nonce)
+            .chain_id(chain_id);
             
         let typed_tx: TypedTransaction = tx.into();
         let signature = wallet.sign_transaction(&typed_tx).await?;
