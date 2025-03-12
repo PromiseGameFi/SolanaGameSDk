@@ -76,10 +76,6 @@ enum Commands {
         value: f64,
         #[arg(short = 'i', long)]
         share_index: u32,
-        #[arg(short = 'n', long)]
-        total_shares: u32,
-        #[arg(short = 'r', long)]
-        threshold: u32,
     },
     SendTx {
         #[arg(short = 's', long, value_delimiter = ',')]
@@ -133,22 +129,31 @@ async fn main() -> Result<()> {
             to,
             value,
             share_index,
-            total_shares: _total_shares,
-            threshold: _threshold,
         } => {
             let rpc_url = env::var("ETHEREUM_RPC_URL").expect("ETHEREUM_RPC_URL must be set");
-            let _client = EthereumClient::new(&rpc_url).await?;
-            let _to_address = Address::from_str(to)?;
-            let _value_wei = U256::from((value * 1e18) as u64);
-            
+            let client = EthereumClient::new(&rpc_url).await?;
+            let to_address = Address::from_str(to)?;
+            let value_wei = U256::from((value * 1e18) as u64);
+
             let share_file: ShareFile = serde_json::from_str(&fs::read_to_string(share_path)?)?;
-            let share = vec![mpc_tss_wallet::crypto::Share {
+            let share = mpc_tss_wallet::crypto::Share {
                 index: *share_index,
                 value: share_file.value,
-            }];
+            };
 
-            let share_wrapper: Vec<ShareWrapper> = share.into_iter().map(ShareWrapper::from).collect();
-            
+            let nonce = client.get_transaction_count(Address::from_str(&share_file.address)?).await?;
+            let chain_id = client.chain_id();
+
+            // Generate partial signature
+            let dummy_key = [1u8; 32]; // Temporary key for wallet initialization
+            let wallet = MPCWallet::new(&dummy_key, 2, 2)?; // Adjust threshold and total shares as needed
+            let partial_sig = wallet.partial_sign_transaction(&share, to_address, value_wei, nonce, chain_id).await?;
+
+            let share_wrapper = ShareWrapper {
+                index: *share_index,
+                value: partial_sig, // Store partial signature
+            };
+
             let signature_path = format!("signature_{}.json", share_index);
             fs::write(&signature_path, serde_json::to_string_pretty(&share_wrapper)?)?;
             println!("Partial signature saved to {}", signature_path);
@@ -171,64 +176,113 @@ async fn main() -> Result<()> {
             println!("Using chain ID: {}", chain_id);
 
             let mut shares = Vec::new();
-            let mut expected_address = None;
+            let mut partial_sigs = Vec::new();
+            let mut sender_address = None;
+
+            // Load shares and partial signatures
             for sig_path in signatures {
-                println!("Attempting to read signature file: {}", sig_path);
+                println!("Reading signature file: {}", sig_path);
                 let wrapper_content = fs::read_to_string(sig_path)?;
-                let wrapper: Vec<ShareWrapper> = serde_json::from_str(&wrapper_content)?;
+                let wrapper: ShareWrapper = serde_json::from_str(&wrapper_content)?;
+                partial_sigs.push(wrapper.value.clone());
+
                 let share_filename = sig_path.replace("signature_", "share_");
                 let share_path = format!("shares/{}", share_filename);
-                println!("Attempting to read share file: {}", share_path);
+                println!("Reading share file: {}", share_path);
                 let share_file_content = fs::read_to_string(&share_path)?;
                 let share_file: ShareFile = serde_json::from_str(&share_file_content)?;
+
                 if !share_file.address.starts_with("0x") || share_file.address.len() != 42 {
                     return Err(anyhow::anyhow!(
                         "Invalid address format in share file: {}",
                         share_file.address
                     ));
                 }
-                if let Some(ref addr) = expected_address {
-                    if *addr != share_file.address {
+
+                if let Some(ref addr) = sender_address {
+                    if *addr != Address::from_str(&share_file.address)? {
                         return Err(anyhow::anyhow!(
-                            "Inconsistent addresses in share files: {} vs {}",
+                            "Inconsistent addresses in share files: {:?} vs {}",
                             addr,
                             share_file.address
                         ));
                     }
                 } else {
-                    expected_address = Some(share_file.address.clone());
+                    sender_address = Some(Address::from_str(&share_file.address)?);
                 }
-                shares.extend(wrapper.into_iter().map(mpc_tss_wallet::crypto::Share::from));
+
+                shares.push(mpc_tss_wallet::crypto::Share {
+                    index: share_file.index,
+                    value: share_file.value,
+                });
             }
 
+            let sender_address = sender_address.ok_or_else(|| anyhow::anyhow!("No address found in share files"))?;
             let to_address = Address::from_str(to)?;
             let value_wei = U256::from((value * 1e18) as u64);
 
-            let dummy_key = [1u8; 32];
-            let wallet = MPCWallet::new(&dummy_key, shares.len() as u32, shares.len() as u32)?;
+            // Initialize wallet with dummy key and correct share parameters
+            let wallet = MPCWallet::new(&[1u8; 32], shares.len() as u32, shares.len() as u32)?;
 
-            let expected_address = expected_address.ok_or_else(|| anyhow::anyhow!("No address found in share files"))?;
-            let sender_address = Address::from_str(&expected_address)?;
+            // Combine partial signatures
+            let final_signature = wallet.combine_signatures(&partial_sigs).await?;
+            if final_signature.len() != 65 {
+                return Err(anyhow::anyhow!(
+                    "Expected 65-byte signature, got {} bytes",
+                    final_signature.len()
+                ));
+            }
 
+            println!("Final combined signature: {}", hex::encode(&final_signature));
+
+            // Extract r, s, and v_raw
+            let r = U256::from_big_endian(&final_signature[0..32]);
+            let s = U256::from_big_endian(&final_signature[32..64]);
+            let v_raw = final_signature[64] as u64;
+
+            // Calculate correct v for EIP-155
+            let recovery_id = if v_raw == 0 || v_raw == 1 {
+                v_raw
+            } else {
+                return Err(anyhow::anyhow!("Unexpected v_raw value: {}. Expected 0 or 1.", v_raw));
+            };
+            let v = chain_id * 2 + 35 + recovery_id;
+
+            // Fetch transaction parameters
             let balance = client.get_balance(sender_address).await?;
-            println!("Sender address: {}", expected_address);
+            println!("Sender address: 0x{}", hex::encode(sender_address));
             println!("Sender balance: {} Wei ({} ETH)", balance, balance.as_u128() as f64 / 1e18);
 
             let gas_price = client.get_gas_price().await?;
             let gas_limit = U256::from(21000);
             let gas_cost = gas_price * gas_limit;
             let total_cost = value_wei + gas_cost;
-            println!("Gas price: {} Wei", gas_price);
-            println!("Gas cost: {} Wei", gas_cost);
-            println!("Total cost: {} Wei ({} ETH)", total_cost, total_cost.as_u128() as f64 / 1e18);
 
             let nonce = client.get_transaction_count(sender_address).await?;
             println!("Using nonce: {}", nonce);
 
+            // Construct RLP-encoded transaction
+            let tx_rlp = {
+                let mut rlp = rlp::RlpStream::new_list(9);
+                rlp.append(&nonce);
+                rlp.append(&gas_price);
+                rlp.append(&gas_limit);
+                rlp.append(&to_address);
+                rlp.append(&value_wei);
+                rlp.append(&Vec::<u8>::new()); // data
+                rlp.append(&U256::from(v));
+                rlp.append(&r);
+                rlp.append(&s);
+                rlp.out().to_vec()
+            };
+
+            println!("RLP-encoded tx: {}", hex::encode(&tx_rlp));
+
+            // Send transaction with retries
             let max_attempts = 3;
             for attempt in 1..=max_attempts {
                 let latest_balance = client.get_balance(sender_address).await?;
-                println!("Attempt {}: Latest balance before signing: {} Wei", attempt, latest_balance);
+                println!("Attempt {}: Latest balance: {} Wei", attempt, latest_balance);
                 if latest_balance < total_cost {
                     if attempt == max_attempts {
                         return Err(anyhow::anyhow!(
@@ -243,57 +297,16 @@ async fn main() -> Result<()> {
                     continue;
                 }
 
-                println!("Signing transaction with {} shares...", shares.len());
-                let signature = wallet.sign_transaction(&shares, to_address, value_wei, nonce, 11155111).await?;
-                if signature.len() != 65 {
-                    return Err(anyhow::anyhow!(
-                        "Expected 65-byte signature, got {} bytes",
-                        signature.len()
-                    ));
-                }
-
-                println!("Raw signature: {:?}", hex::encode(&signature));
-                let r = U256::from_big_endian(&signature[0..32]);
-                let s = U256::from_big_endian(&signature[32..64]);
-                let v_raw = signature[64] as u64;
-                println!("v_raw from signature: {}", v_raw);
-
-                // Since v_raw = 114 is invalid, try both recovery IDs (0 and 1)
-                let chain_id = 11155111u64;
-                for recovery_id in 0..=1 {
-                    let v_new = chain_id * 2 + 35 + recovery_id;
-                    println!("Trying v = {} with recovery_id = {}", v_new, recovery_id);
-
-                    let tx_rlp = {
-                        let mut rlp = rlp::RlpStream::new_list(9);
-                        rlp.append(&nonce);
-                        rlp.append(&gas_price);
-                        rlp.append(&gas_limit);
-                        rlp.append(&to_address);
-                        rlp.append(&value_wei);
-                        rlp.append(&Vec::<u8>::new()); // data
-                        rlp.append(&U256::from(v_new));
-                        rlp.append(&r);
-                        rlp.append(&s);
-                        rlp.out().to_vec()
-                    };
-
-                    println!("RLP-encoded tx: {:?}", hex::encode(&tx_rlp));
-                    match client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp.clone()).await {
-                        Ok(_) => {
-                            println!("Transaction sent successfully with v = {}!", v_new);
-                            return Ok(()); // Exit on success
-                        }
-                        Err(e) => {
-                            println!("Failed with v = {}: {}", v_new, e);
-                            if recovery_id == 1 {
-                                return Err(anyhow::anyhow!(
-                                    "Transaction failed with both recovery IDs: {}", e
-                                ));
-                            }
-                            // Try the next recovery ID
-                        }
+                match client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp.clone()).await {
+                    Ok(_) => {
+                        println!("Transaction sent successfully!");
+                        return Ok(());
                     }
+                    Err(e) if e.to_string().contains("insufficient funds") && attempt < max_attempts => {
+                        println!("Attempt {} failed: {}. Retrying in 5 seconds...", attempt, e);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    }
+                    Err(e) => return Err(e),
                 }
             }
         }
