@@ -18,6 +18,7 @@ struct ShareWrapper {
     value: Vec<u8>,
 }
 
+// Conversion implementations for ShareWrapper to/from the internal Share type
 impl From<ShareWrapper> for mpc_tss_wallet::crypto::Share {
     fn from(wrapper: ShareWrapper) -> Self {
         Self {
@@ -36,11 +37,13 @@ impl From<mpc_tss_wallet::crypto::Share> for ShareWrapper {
     }
 }
 
+// Struct to represent a private key file format
 #[derive(Serialize, Deserialize)]
 struct KeyFile {
     private_key: String,
 }
 
+// Struct to represent a share file format, including address information
 #[derive(Serialize, Deserialize)]
 struct ShareFile {
     index: u32,
@@ -48,6 +51,7 @@ struct ShareFile {
     address: String,
 }
 
+// CLI parsing structure using clap
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -55,8 +59,10 @@ struct Cli {
     command: Commands,
 }
 
+// Subcommands for the CLI application
 #[derive(Subcommand)]
 enum Commands {
+    // Split command: Creates key shares from a private key
     Split {
         #[arg(short = 'k', long)]
         key_file_path: String,
@@ -67,6 +73,7 @@ enum Commands {
         #[arg(short = 'o', long)]
         output_dir: String,
     },
+    // Sign command: Creates a partial signature with one share
     Sign {
         #[arg(short = 'p', long)]
         share_path: String,
@@ -77,6 +84,7 @@ enum Commands {
         #[arg(short = 'i', long)]
         share_index: u32,
     },
+    // SendTx command: Combines signatures and sends the transaction
     SendTx {
         #[arg(short = 's', long, value_delimiter = ',')]
         signatures: Vec<String>,
@@ -89,24 +97,29 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Load environment variables and parse CLI arguments
     dotenv().ok();
     let cli = Cli::parse();
 
     match &cli.command {
+        // Handle the Split command: Generate shares from a private key
         Commands::Split {
             key_file_path,
             total_shares,
             threshold,
             output_dir,
         } => {
+            // Read the private key from file
             let key_file_content = fs::read_to_string(key_file_path)?;
             let key_file: KeyFile = serde_json::from_str(&key_file_content)?;
             let private_key = hex::decode(key_file.private_key.trim_start_matches("0x"))?;
             
+            // Create the MPC wallet with the specified threshold and shares
             let wallet = MPCWallet::new(&private_key, *threshold, *total_shares)?;
             let wallet_address = wallet.get_address();
             println!("Wallet address: 0x{}", hex::encode(wallet_address));
 
+            // Create output directory and save each share to a file
             fs::create_dir_all(output_dir)?;
 
             for i in 1..=*total_shares {
@@ -124,31 +137,37 @@ async fn main() -> Result<()> {
             }
         }
 
+        // Handle the Sign command: Create a partial signature with one share
         Commands::Sign {
             share_path,
             to,
             value,
             share_index,
         } => {
+            // Initialize Ethereum client from environment variables
             let rpc_url = env::var("ETHEREUM_RPC_URL").expect("ETHEREUM_RPC_URL must be set");
             let client = EthereumClient::new(&rpc_url).await?;
             let to_address = Address::from_str(to)?;
             let value_wei = U256::from((value * 1e18) as u64);
 
+            // Load the share from file
             let share_file: ShareFile = serde_json::from_str(&fs::read_to_string(share_path)?)?;
             let share = mpc_tss_wallet::crypto::Share {
                 index: *share_index,
                 value: share_file.value,
             };
 
+            // Get transaction parameters from the network
             let nonce = client.get_transaction_count(Address::from_str(&share_file.address)?).await?;
             let chain_id = client.chain_id();
 
             // Generate partial signature
+            // Note: Using dummy key for wallet initialization since we're only using it for signing
             let dummy_key = [1u8; 32]; // Temporary key for wallet initialization
             let wallet = MPCWallet::new(&dummy_key, 2, 2)?; // Adjust threshold and total shares as needed
             let partial_sig = wallet.partial_sign_transaction(&share, to_address, value_wei, nonce, chain_id).await?;
 
+            // Save the partial signature to a file
             let share_wrapper = ShareWrapper {
                 index: *share_index,
                 value: partial_sig, // Store partial signature
@@ -159,11 +178,13 @@ async fn main() -> Result<()> {
             println!("Partial signature saved to {}", signature_path);
         }
 
+        // Handle the SendTx command: Combine signatures and send the transaction
         Commands::SendTx {
             signatures,
             to,
             value,
         } => {
+            // Initialize Ethereum client and verify chain ID
             let rpc_url = env::var("ETHEREUM_RPC_URL").expect("ETHEREUM_RPC_URL must be set");
             let client = EthereumClient::new(&rpc_url).await?;
             let chain_id = client.chain_id();
@@ -175,23 +196,26 @@ async fn main() -> Result<()> {
             }
             println!("Using chain ID: {}", chain_id);
 
+            // Data structures to hold shares, signatures, and the sender address
             let mut shares = Vec::new();
             let mut partial_sigs = Vec::new();
             let mut sender_address = None;
 
-            // Load shares and partial signatures
+            // Load shares and partial signatures from files
             for sig_path in signatures {
                 println!("Reading signature file: {}", sig_path);
                 let wrapper_content = fs::read_to_string(sig_path)?;
                 let wrapper: ShareWrapper = serde_json::from_str(&wrapper_content)?;
                 partial_sigs.push(wrapper.value.clone());
 
+                // Determine share filename based on signature filename
                 let share_filename = sig_path.replace("signature_", "share_");
                 let share_path = format!("shares/{}", share_filename);
                 println!("Reading share file: {}", share_path);
                 let share_file_content = fs::read_to_string(&share_path)?;
                 let share_file: ShareFile = serde_json::from_str(&share_file_content)?;
 
+                // Validate address format
                 if !share_file.address.starts_with("0x") || share_file.address.len() != 42 {
                     return Err(anyhow::anyhow!(
                         "Invalid address format in share file: {}",
@@ -199,6 +223,7 @@ async fn main() -> Result<()> {
                     ));
                 }
 
+                // Ensure all shares have the same sender address
                 if let Some(ref addr) = sender_address {
                     if *addr != Address::from_str(&share_file.address)? {
                         return Err(anyhow::anyhow!(
@@ -217,14 +242,15 @@ async fn main() -> Result<()> {
                 });
             }
 
+            // Extract sender address and prepare transaction parameters
             let sender_address = sender_address.ok_or_else(|| anyhow::anyhow!("No address found in share files"))?;
             let to_address = Address::from_str(to)?;
             let value_wei = U256::from((value * 1e18) as u64);
 
-            // Initialize wallet with dummy key and correct share parameters
+            // Initialize wallet with dummy key for signature combination
             let wallet = MPCWallet::new(&[1u8; 32], shares.len() as u32, shares.len() as u32)?;
 
-            // Combine partial signatures
+            // Combine partial signatures to get the final signature
             let final_signature = wallet.combine_signatures(&partial_sigs).await?;
             if final_signature.len() != 65 {
                 return Err(anyhow::anyhow!(
@@ -235,12 +261,12 @@ async fn main() -> Result<()> {
 
             println!("Final combined signature: {}", hex::encode(&final_signature));
 
-            // Extract r, s, and v_raw
+            // Extract signature components (r, s, v) from the combined signature
             let r = U256::from_big_endian(&final_signature[0..32]);
             let s = U256::from_big_endian(&final_signature[32..64]);
             let v_raw = final_signature[64] as u64;
 
-            // Calculate correct v for EIP-155
+            // Calculate correct v parameter according to EIP-155
             let recovery_id = if v_raw == 0 || v_raw == 1 {
                 v_raw
             } else {
@@ -248,7 +274,7 @@ async fn main() -> Result<()> {
             };
             let v = chain_id * 2 + 35 + recovery_id;
 
-            // Fetch transaction parameters
+            // Fetch additional transaction parameters from the network
             let balance = client.get_balance(sender_address).await?;
             println!("Sender address: 0x{}", hex::encode(sender_address));
             println!("Sender balance: {} Wei ({} ETH)", balance, balance.as_u128() as f64 / 1e18);
@@ -261,7 +287,7 @@ async fn main() -> Result<()> {
             let nonce = client.get_transaction_count(sender_address).await?;
             println!("Using nonce: {}", nonce);
 
-            // Construct RLP-encoded transaction
+            // Construct RLP-encoded transaction according to EIP-155
             let tx_rlp = {
                 let mut rlp = rlp::RlpStream::new_list(9);
                 rlp.append(&nonce);
@@ -278,11 +304,13 @@ async fn main() -> Result<()> {
 
             println!("RLP-encoded tx: {}", hex::encode(&tx_rlp));
 
-            // Send transaction with retries
+            // Send transaction with retry mechanism (up to 3 attempts)
             let max_attempts = 3;
             for attempt in 1..=max_attempts {
                 let latest_balance = client.get_balance(sender_address).await?;
                 println!("Attempt {}: Latest balance: {} Wei", attempt, latest_balance);
+                
+                // Check if balance is sufficient
                 if latest_balance < total_cost {
                     if attempt == max_attempts {
                         return Err(anyhow::anyhow!(
@@ -297,6 +325,7 @@ async fn main() -> Result<()> {
                     continue;
                 }
 
+                // Actually send the transaction
                 match client.send_test_transaction(sender_address, to_address, value_wei, tx_rlp.clone()).await {
                     Ok(_) => {
                         println!("Transaction sent successfully!");
