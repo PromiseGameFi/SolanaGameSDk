@@ -93,7 +93,7 @@ fn generate_shares(total_shares: usize, threshold: usize) -> Result<()> {
         let share = sk_set.secret_key_share(i);
         let serialized = SerializableSecretKeyShare {
             index: i,
-            bytes: share.to_bytes().to_vec(),
+            bytes: share.serialize().to_vec(),
         };
         let json = serde_json::to_string(&serialized)?;
         println!("Share {}: {}", i, json);
@@ -108,11 +108,11 @@ fn generate_partial_signatures(shares: Vec<String>, message: String) -> Result<(
 
     for share_str in shares {
         let serialized: SerializableSecretKeyShare = serde_json::from_str(&share_str)?;
-        let share = SecretKeyShare::from_bytes(&serialized.bytes)?;
+        let share = SecretKeyShare::deserialize(&serialized.bytes)?;
         let partial_sig = share.sign(&message.serialize());
         
         let serialized_sig = SerializableSignatureShare {
-            bytes: partial_sig.to_bytes().to_vec(),
+            bytes: partial_sig.serialize().to_vec(),
         };
         let json = serde_json::to_string(&serialized_sig)?;
         println!("Partial Signature: {}", json);
@@ -130,7 +130,7 @@ fn reconstruct_signature(partial_sigs: Vec<String>, message: String) -> Result<(
     let mut shares = Vec::new();
     for (i, sig_str) in partial_sigs.iter().enumerate() {
         let serialized: SerializableSignatureShare = serde_json::from_str(sig_str)?;
-        let sig = SignatureShare::from_bytes(&serialized.bytes)?;
+        let sig = SignatureShare::deserialize(&serialized.bytes)?;
         shares.push((i, sig));
     }
 
