@@ -122,7 +122,25 @@ fn generate_partial_signatures(shares: Vec<String>, message: String) -> Result<(
 }
 
 fn reconstruct_signature(partial_sigs: Vec<String>, message: String) -> Result<()> {
-   
+    let message_hash = keccak256(message.as_bytes());
+    let message = Message::from_slice(&message_hash)?;
+    let sk_set = SecretKeySet::random(1, &mut rand::thread_rng());
+    let pk_set = sk_set.public_keys();
+
+    let mut shares = Vec::new();
+    for (i, sig_str) in partial_sigs.iter().enumerate() {
+        let serialized: SerializableSignatureShare = serde_json::from_str(sig_str)?;
+        let sig = SignatureShare::deserialize(&serialized.bytes)?;
+        shares.push((i, sig));
+    }
+
+    let full_sig = pk_set.combine_signatures(&shares)?;
+    let is_valid = pk_set.public_key().verify(&full_sig, &message.serialize());
+
+    println!("Full Signature: {}", hex::encode(full_sig.to_bytes()));
+    println!("Signature Valid: {}", is_valid);
+
+    Ok(())
 }
 
 async fn broadcast_transaction(signature: String, recipient: String, value: u64, nonce: u64) -> Result<()> {
