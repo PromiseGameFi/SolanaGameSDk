@@ -2,11 +2,11 @@ Clone repo
 pip install -r requirements.txt
 
 -split secret
-python script.py generate --total 5 --threshold 3
+python main.py generate --total 5 --threshold 3
 
 -crea
-python script.py partial_sig --index 1
-python script.py partial_sig --index 2
-python script.py partial_sig --index 3
+python main.py partial_sig --index 1 --to 0xRecipientAddress --value 0.01
+python main.py partial_sig --index 2 --to 0xRecipientAddress --value 0.01
+python main.py partial_sig --index 3 --to 0xRecipientAddress --value 0.01
 
-python script.py send_tx --to 0xRecipientAddress --value 0.01 --indices 1 2 3 --threshold 3
+python main.py send_tx --indices 1 2 3
