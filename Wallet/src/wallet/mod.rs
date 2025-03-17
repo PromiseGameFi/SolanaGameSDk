@@ -1,3 +1,4 @@
+
 pub mod keygen;
 pub mod sign;
 pub mod network;
@@ -9,11 +10,10 @@ use std::collections::HashMap;
 pub struct KeyShare {
     pub id: usize,
     pub private_share: Vec<u8>,
-    pub public_package: PublicKeyPackage,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublicKeyPackage {
+pub struct PublicPackage {
     pub threshold: usize,
     pub total_shares: usize,
     pub public_key: [u8; 64],
