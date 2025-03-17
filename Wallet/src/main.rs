@@ -12,7 +12,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    GenerateShares {
+    Generate {
         #[arg(short, long)]
         threshold: usize,
         #[arg(short, long)]
@@ -20,33 +20,35 @@ enum Commands {
         #[arg(short, long)]
         output_dir: PathBuf,
     },
-    PartialSign {
+    Sign {
         #[arg(short, long)]
-        share_file: PathBuf,
+        share: PathBuf,
         #[arg(short, long)]
         message: String,
         #[arg(short, long)]
         output: PathBuf,
     },
-    CombineSignatures {
+    Combine {
         #[arg(short, long)]
-        public_file: PathBuf,
+        public: PathBuf,
         #[arg(short, long)]
-        signature_files: Vec<PathBuf>,
+        signatures: Vec<PathBuf>,
+        #[arg(short, long)]
+        message: String,
         #[arg(short, long)]
         output: PathBuf,
     },
-    SendTransaction {
+    Send {
         #[arg(short, long)]
         rpc_url: String,
         #[arg(short, long)]
-        public_file: PathBuf,
+        public: PathBuf,
         #[arg(short, long)]
-        signature_file: PathBuf,
+        signature: PathBuf,
         #[arg(short, long)]
         to: String,
         #[arg(short, long)]
-        value: f64,
+        value: String,
     },
 }
 
@@ -55,58 +57,55 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::GenerateShares { threshold, shares, output_dir } => {
+        Commands::Generate { threshold, shares, output_dir } => {
             fs::create_dir_all(&output_dir)?;
-            let shares = wallet::keygen::generate_shares(threshold, shares)?;
-            
-            for (id, share) in shares {
-                let path = output_dir.join(format!("share_{}.json", id));
-                fs::write(path, serde_json::to_string(&share)?)?;
-            }
+            wallet::keygen::generate_shares(threshold, shares, output_dir.to_str().unwrap())?;
         }
-        Commands::PartialSign { share_file, message, output } => {
-            let share: KeyShare = serde_json::from_str(&fs::read_to_string(share_file)?)?;
+        
+        Commands::Sign { share, message, output } => {
+            let share: KeyShare = serde_json::from_str(&fs::read_to_string(share)?)?;
             let message = hex::decode(message.trim_start_matches("0x"))?;
-            let signature = wallet::sign::partial_sign(&share, &message)?;
-            fs::write(output, hex::encode(signature))?;
+            let sig = wallet::sign::partial_sign(&share, &message)?;
+            fs::write(output, hex::encode(sig))?;
         }
-        Commands::CombineSignatures { public_file, signature_files, output } => {
-            let public: PublicKeyPackage = serde_json::from_str(&fs::read_to_string(public_file)?)?;
-            let message = vec![]; // Should be passed from context
+        
+        Commands::Combine { public, signatures, message, output } => {
+            let public: PublicPackage = serde_json::from_str(&fs::read_to_string(public)?)?;
+            let message = hex::decode(message.trim_start_matches("0x"))?;
             
-            let mut signatures = vec![];
-            for file in signature_files {
+            let mut sigs = vec![];
+            for file in signatures {
+                let id = file.file_stem().unwrap()
+                    .to_str().unwrap()
+                    .split('_').last().unwrap()
+                    .parse::<usize>()?;
                 let sig = hex::decode(fs::read_to_string(file)?)?;
-                let id = file.file_stem().unwrap().to_str().unwrap().split('_').last().unwrap().parse()?;
-                signatures.push((id, sig));
+                sigs.push((id, sig));
             }
             
-            let combined = wallet::sign::combine_signatures(&public.public_package, &signatures, &message)?;
+            let combined = wallet::sign::combine_signatures(&public, &sigs, &message)?;
             fs::write(output, hex::encode(combined.serialize_der()))?;
         }
-        Commands::SendTransaction { rpc_url, public_file, signature_file, to, value } => {
-            let public: PublicKeyPackage = serde_json::from_str(&fs::read_to_string(public_file)?)?;
-            let signature = hex::decode(fs::read_to_string(signature_file)?)?;
-            
-            let provider = Provider::<Http>::try_from(&rpc_url)?;
-            let chain_id = provider.get_chainid().await?.as_u64();
-            let nonce = provider.get_transaction_count(derive_address(&public), None).await?;
-            
-            let (tx, _) = wallet::network::construct_transaction(
-                to.parse()?,
-                U256::from((value * 1e18) as u128),
-                nonce,
-                chain_id
-            );
-            
-            let tx_hash = wallet::network::send_transaction(
+        
+        Commands::Send { rpc_url, public, signature, to, value } => {
+            let public: PublicPackage = serde_json::from_str(&fs::read_to_string(public)?)?;
+            let signature = hex::decode(fs::read_to_string(signature)?)?;
+            let value = U256::from_dec_str(&value)?;
+
+            let (tx, _) = wallet::network::create_transaction(
                 &rpc_url,
                 &public,
-                &signature,
-                tx
+                to.parse()?,
+                value
             ).await?;
-            
-            println!("Transaction sent: 0x{}", hex::encode(tx_hash));
+
+            let tx_hash = wallet::network::send_transaction(
+                &rpc_url,
+                tx,
+                &signature
+            ).await?;
+
+            println!("Sent transaction: 0x{}", hex::encode(tx_hash));
         }
     }
 
