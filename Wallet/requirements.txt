@@ -1,4 +1,4 @@
 
-web3.py==6.11.0          # Ethereum interaction library
-threshold_crypto==0.2.0  # Threshold signature scheme (Shamir Secret Sharing + Feldman VSS)
-py-secp256k1==0.14.0     # ECDSA operations with secp256k1 curve
+web3      # Ethereum interaction library
+threshold_crypto # Threshold signature scheme (Shamir Secret Sharing + Feldman VSS)
+py-secp256k1    # ECDSA operations with secp256k1 curve
