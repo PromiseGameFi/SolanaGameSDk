@@ -5,6 +5,10 @@ use ethers::{
     utils::keccak256,
 };
 use std::str::FromStr;
+use crate::key_manager::KeyShare;
+use frost_secp256k1::frost_core::frost::keys::PublicKeyPackage;
+use serde_json;
+use hex;
 
 #[derive(Debug)]
 pub struct EthereumClient {
@@ -108,22 +112,33 @@ impl EthereumClient {
         Ok(pending_tx.tx_hash())
     }
     
-    pub fn derive_address_from_public_key(public_key_hex: &str) -> Result<String> {
-        let public_key_bytes = hex::decode(public_key_hex)
-            .map_err(|e| WalletError::Ethereum(format!("Invalid public key: {}", e)))?;
+    pub fn derive_address_from_public_key(verifying_key_str: &str) -> Result<String> {
+        // Deserialize the FROST PublicKeyPackage
+        let public_key_package: PublicKeyPackage = 
+            serde_json::from_str(verifying_key_str)
+                .map_err(|e| WalletError::Ethereum(format!("Invalid verifying key: {}", e)))?;
+                
+        // Get the secp256k1 point using the verifying key
+        let verifying_key = public_key_package.verifying_key();
+        let point = verifying_key.serialize();
         
-        let public_key = secp256k1::PublicKey::from_slice(&public_key_bytes)
-            .map_err(|e| WalletError::Ethereum(format!("Invalid public key: {}", e)))?;
+        // Convert to Ethereum format (uncompressed)
+        // We need to manually create an uncompressed format as FROST uses compressed points
+        let mut uncompressed = Vec::with_capacity(65);
+        uncompressed.push(0x04); // Uncompressed point marker
+        uncompressed.extend_from_slice(&point);
         
-        // Convert to uncompressed form for Ethereum
-        let uncompressed = public_key.serialize_uncompressed();
-        
-        // Take the keccak256 hash of the public key (excluding the first byte which is the format marker)
+        // Take the keccak256 hash of the key excluding the format marker
         let hash = keccak256(&uncompressed[1..]);
         
         // Take the last 20 bytes of the hash as the Ethereum address
         let address = format!("0x{}", hex::encode(&hash[12..]));
         
         Ok(address)
+    }
+
+    #[allow(dead_code)]
+    pub fn get_address_from_share(key_share: &KeyShare) -> Result<String> {
+        Self::derive_address_from_public_key(&key_share.verifying_key)
     }
 } 
