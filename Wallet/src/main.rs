@@ -4,19 +4,14 @@ mod signer;
 mod eth;
 
 use errors::{Result, WalletError};
-use key_manager::{KeyManager, KeyShare};
-use signer::Signer;
+use key_manager::KeyManager;
+use signer::{Signer, PartialSignature};
 use eth::EthereumClient;
 
 use clap::{Parser, Subcommand};
 use dotenv::dotenv;
-use ethers::types::U256;
-use frost_secp256k1::{Identifier, SigningCommitment, SigningResponse, SigningPackage, Parameters};
-use rand::rngs::OsRng;
-use secp256k1::Message;
-use std::collections::HashMap;
 use std::env;
-use std::str::FromStr;
+use std::fs;
 use tokio;
 
 #[derive(Parser, Debug)]
@@ -32,10 +27,10 @@ enum Commands {
     GenerateKeys {
         /// Threshold (minimum number of shares needed)
         #[clap(short, long)]
-        threshold: u16,
+        threshold: u8,
         /// Total number of shares to create
         #[clap(short, long)]
-        shares: u16,
+        shares: u8,
     },
     /// Create a partial signature for a transaction
     Sign {
@@ -81,16 +76,21 @@ async fn main() -> Result<()> {
                 println!("Saved key share {} to share_{}.json", id, id);
             }
             
+            // Load the config to get the public key and derive the Ethereum address
+            let _config = key_manager.load_config()?;
+            let address = EthereumClient::derive_address_from_public_key(&_config.public_key)?;
+            
             println!("Key generation completed successfully.");
+            println!("Wallet address: {}", address);
         },
         Commands::Sign { share_id, to, amount } => {
             println!("Creating partial signature with share {}", share_id);
             
             let key_manager = KeyManager::new("wallet_config.json");
-            let config = key_manager.load_config()?;
+            let _config = key_manager.load_config()?;
             let key_share = key_manager.load_key_share(&share_id)?;
             
-            let signer = Signer::new(config.threshold, config.shares);
+            let signer = Signer::new("wallet_config.json");
             
             let rpc_url = env::var("ETH_RPC_URL")
                 .map_err(|_| WalletError::Ethereum("ETH_RPC_URL not set".to_string()))?;
@@ -102,14 +102,8 @@ async fn main() -> Result<()> {
             
             let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
             
-            // Deserialize key package to get the public key
-            let key_package: frost_secp256k1::KeyPackage = serde_json::from_str(&key_share.key_package)?;
-            let verifying_key = key_package.verifying_key();
-            
             // Derive Ethereum address from public key
-            let public_key_bytes = verifying_key.serialize();
-            let address = format!("0x{}", hex::encode(&ethers::utils::keccak256(&public_key_bytes)[12..]));
-            
+            let address = EthereumClient::derive_address_from_public_key(&key_share.public_key)?;
             println!("Wallet address: {}", address);
             
             let nonce = eth_client.get_nonce(&address).await?;
@@ -132,19 +126,18 @@ async fn main() -> Result<()> {
             println!("Transaction hash to sign: {}", hex::encode(tx_hash));
             
             // Create partial signature
-            let (id, commitment, signature_share) = signer.create_partial_signature(&key_share, &tx_hash)?;
+            let partial_sig = signer.create_partial_signature(&key_share, &tx_hash)?;
             
-            // Save signature share
+            // Save signature data
             let signature_data = serde_json::json!({
-                "share_id": id,
-                "commitment": serde_json::to_string(&commitment)?,
-                "signature_share": serde_json::to_string(&signature_share)?,
+                "share_id": partial_sig.share_id,
+                "signature": partial_sig.signature,
                 "tx_hash": hex::encode(tx_hash),
                 "tx_data": serde_json::to_string(&tx)?,
             });
             
-            let signature_file = format!("sig_{}_{}.json", id, hex::encode(&tx_hash[0..4]));
-            std::fs::write(&signature_file, serde_json::to_string_pretty(&signature_data)?)?;
+            let signature_file = format!("sig_{}_{}.json", share_id, hex::encode(&tx_hash[0..4]));
+            fs::write(&signature_file, serde_json::to_string_pretty(&signature_data)?)?;
             
             println!("Partial signature saved to {}", signature_file);
         },
@@ -152,33 +145,29 @@ async fn main() -> Result<()> {
             println!("Combining signatures from {} files", signature_files.len());
             
             let key_manager = KeyManager::new("wallet_config.json");
-            let config = key_manager.load_config()?;
+            let _config = key_manager.load_config()?;
             
-            if signature_files.len() < config.threshold as usize {
+            if signature_files.len() < _config.threshold as usize {
                 return Err(WalletError::Threshold(format!(
                     "Need at least {} signature shares, but only {} provided",
-                    config.threshold,
+                    _config.threshold,
                     signature_files.len()
                 )));
             }
             
-            // Load all signature shares
+            // Load all partial signatures
             let mut tx_data = None;
             let mut tx_hash = None;
-            let mut commitments = HashMap::new();
-            let mut signature_shares = HashMap::new();
+            let mut partial_sigs = Vec::new();
             
             for file in &signature_files {
-                let data = std::fs::read_to_string(file)?;
+                let data = fs::read_to_string(file)?;
                 let sig_data: serde_json::Value = serde_json::from_str(&data)?;
                 
-                let share_id = sig_data["share_id"].as_str().unwrap();
-                let commitment: SigningCommitment = serde_json::from_str(
-                    sig_data["commitment"].as_str().unwrap()
-                )?;
-                let signature_share: SigningResponse = serde_json::from_str(
-                    sig_data["signature_share"].as_str().unwrap()
-                )?;
+                let partial_sig = PartialSignature {
+                    share_id: sig_data["share_id"].as_str().unwrap().to_string(),
+                    signature: sig_data["signature"].as_str().unwrap().to_string(),
+                };
                 
                 // Keep track of transaction data
                 if tx_data.is_none() {
@@ -186,34 +175,20 @@ async fn main() -> Result<()> {
                     tx_hash = Some(hex::decode(sig_data["tx_hash"].as_str().unwrap())?);
                 }
                 
-                let identifier = Identifier::try_from(share_id.parse::<u16>().unwrap()).unwrap();
-                commitments.insert(identifier, commitment);
-                signature_shares.insert(identifier, signature_share);
+                partial_sigs.push(partial_sig);
             }
             
             let tx_hash = tx_hash.unwrap();
-            let message = Message::from_slice(&tx_hash.as_slice()).unwrap();
             
-            // Create signing package
-            let signing_package = SigningPackage::new(commitments, message);
+            // Combine signatures to get a complete signature
+            let signer = Signer::new("wallet_config.json");
+            let signature = signer.combine_signatures(
+                partial_sigs,
+                &tx_hash,
+                _config.threshold,
+            )?;
             
-            // Combine signatures
-            let signer = Signer::new(config.threshold, config.shares);
-            let signature = signer.combine_signatures(signing_package, signature_shares)?;
-            
-            // Convert FROST signature to Ethereum signature format
-            // This is a simplified implementation
-            let r = signature.R.serialize();
-            let s = signature.z.to_bytes();
-            
-            // In a real implementation, you would need proper conversion
-            // This is just a placeholder
-            let mut sig_bytes = Vec::with_capacity(65);
-            sig_bytes.extend_from_slice(&r[..32]);
-            sig_bytes.extend_from_slice(&s[..32]);
-            sig_bytes.push(0); // recovery id (placeholder)
-            
-            println!("Combined signature: {}", hex::encode(&sig_bytes));
+            println!("Combined signature: {}", hex::encode(&signature));
             
             // Send transaction
             let rpc_url = env::var("ETH_RPC_URL")
@@ -226,13 +201,12 @@ async fn main() -> Result<()> {
             
             let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
             
-            // Recreate transaction (simplified)
+            // Parse transaction data
             let tx: ethers::types::transaction::eip2718::TypedTransaction = 
                 serde_json::from_str(&tx_data.unwrap())?;
             
-            // Serialize and send transaction (this is a simplified implementation)
-            // In a real system, you would need to properly encode the transaction with the signature
-            let tx_hash = eth_client.send_raw_transaction(vec![]).await?;
+            // Send the transaction with the combined signature
+            let tx_hash = eth_client.send_transaction(tx, signature).await?;
             
             println!("Transaction sent! Hash: {}", tx_hash);
         },

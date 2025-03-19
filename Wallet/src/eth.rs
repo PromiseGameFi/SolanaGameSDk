@@ -1,12 +1,10 @@
 use crate::errors::{Result, WalletError};
 use ethers::{
     prelude::*,
-    types::{transaction::eip2718::TypedTransaction, TransactionRequest, U256},
+    types::{transaction::eip2718::TypedTransaction, TransactionRequest, U256, H256},
     utils::keccak256,
 };
-use secp256k1::{PublicKey, SecretKey, Secp256k1, Message};
 use std::str::FromStr;
-use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct EthereumClient {
@@ -80,41 +78,50 @@ impl EthereumClient {
         
         let typed_tx: TypedTransaction = tx.into();
         
-        // Calculate transaction hash (for signing)
-        let encoded = typed_tx.rlp_unsigned().to_vec();
-        let hash = keccak256(&encoded);
+        let hash = typed_tx.sighash().to_fixed_bytes();
         
         Ok((typed_tx, hash))
     }
     
-    pub async fn send_raw_transaction(&self, signed_tx: Vec<u8>) -> Result<H256> {
-        self.provider.send_raw_transaction(Bytes::from(signed_tx))
+    pub async fn send_transaction(&self, tx: TypedTransaction, signature: Vec<u8>) -> Result<H256> {
+        // Extract the r, s, v components from the signature
+        if signature.len() != 65 {
+            return Err(WalletError::Ethereum("Invalid signature length".to_string()));
+        }
+        
+        let r = U256::from_big_endian(&signature[0..32]);
+        let s = U256::from_big_endian(&signature[32..64]);
+        let v = signature[64] as u64 + self.chain_id * 2 + 35;
+        
+        // Apply the signature to the transaction
+        let signed_tx = tx.rlp_signed(&Signature {
+            r,
+            s,
+            v: v.into(),
+        });
+        
+        // Send the raw transaction
+        let pending_tx = self.provider.send_raw_transaction(signed_tx)
             .await
-            .map_err(|e| WalletError::Ethereum(format!("Failed to send transaction: {}", e)))
+            .map_err(|e| WalletError::Ethereum(format!("Failed to send transaction: {}", e)))?;
+            
+        Ok(pending_tx.tx_hash())
     }
     
-    pub fn recover_public_key(signature: &[u8], message_hash: &[u8; 32]) -> Result<String> {
-        // This is a simplified implementation
-        // In a real scenario, you would need to convert FROST signature to Ethereum signature format
+    pub fn derive_address_from_public_key(public_key_hex: &str) -> Result<String> {
+        let public_key_bytes = hex::decode(public_key_hex)
+            .map_err(|e| WalletError::Ethereum(format!("Invalid public key: {}", e)))?;
         
-        let secp = Secp256k1::new();
-        let message = Message::from_slice(message_hash)
-            .map_err(|e| WalletError::Ethereum(format!("Invalid message hash: {}", e)))?;
+        let public_key = secp256k1::PublicKey::from_slice(&public_key_bytes)
+            .map_err(|e| WalletError::Ethereum(format!("Invalid public key: {}", e)))?;
         
-        // Parse signature (this is simplified and would need adjustment for actual FROST signatures)
-        let rec_id = signature[64];
-        let recovery_id = secp256k1::ecdsa::RecoveryId::from_i32(rec_id as i32)
-            .map_err(|e| WalletError::Ethereum(format!("Invalid recovery ID: {}", e)))?;
+        // Convert to uncompressed form for Ethereum
+        let uncompressed = public_key.serialize_uncompressed();
         
-        let sig = secp256k1::ecdsa::RecoverableSignature::from_compact(&signature[0..64], recovery_id)
-            .map_err(|e| WalletError::Ethereum(format!("Invalid signature: {}", e)))?;
+        // Take the keccak256 hash of the public key (excluding the first byte which is the format marker)
+        let hash = keccak256(&uncompressed[1..]);
         
-        let public_key = secp.recover_ecdsa(&message, &sig)
-            .map_err(|e| WalletError::Ethereum(format!("Failed to recover public key: {}", e)))?;
-        
-        // Convert to Ethereum address
-        let public_key_bytes = public_key.serialize_uncompressed();
-        let hash = keccak256(&public_key_bytes[1..]);
+        // Take the last 20 bytes of the hash as the Ethereum address
         let address = format!("0x{}", hex::encode(&hash[12..]));
         
         Ok(address)
