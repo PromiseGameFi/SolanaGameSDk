@@ -6,7 +6,7 @@ use ethers::{
 };
 use std::str::FromStr;
 use crate::key_manager::KeyShare;
-use frost_secp256k1::frost_core::frost::keys::PublicKeyPackage;
+use secp256k1::{PublicKey, Secp256k1};
 use serde_json;
 use hex;
 
@@ -112,26 +112,22 @@ impl EthereumClient {
         Ok(pending_tx.tx_hash())
     }
     
-    pub fn derive_address_from_public_key(verifying_key_str: &str) -> Result<String> {
-        // Deserialize the FROST PublicKeyPackage
-        let public_key_package: PublicKeyPackage = 
-            serde_json::from_str(verifying_key_str)
-                .map_err(|e| WalletError::Ethereum(format!("Invalid verifying key: {}", e)))?;
-                
-        // Get the secp256k1 point using the verifying key
-        let verifying_key = public_key_package.verifying_key();
-        let point = verifying_key.serialize();
+    pub fn derive_address_from_public_key(public_key_hex: &str) -> Result<String> {
+        // Parse the public key from hex
+        let public_key_bytes = hex::decode(public_key_hex)
+            .map_err(|e| WalletError::Ethereum(format!("Invalid public key hex: {}", e)))?;
+            
+        // Parse as secp256k1 public key
+        let public_key = PublicKey::from_slice(&public_key_bytes)
+            .map_err(|e| WalletError::Ethereum(format!("Invalid public key: {}", e)))?;
         
-        // Convert to Ethereum format (uncompressed)
-        // We need to manually create an uncompressed format as FROST uses compressed points
-        let mut uncompressed = Vec::with_capacity(65);
-        uncompressed.push(0x04); // Uncompressed point marker
-        uncompressed.extend_from_slice(&point);
+        // Convert to uncompressed format required by Ethereum
+        let uncompressed = public_key.serialize_uncompressed();
         
-        // Take the keccak256 hash of the key excluding the format marker
+        // Take keccak256 hash of the key (excluding the format byte)
         let hash = keccak256(&uncompressed[1..]);
         
-        // Take the last 20 bytes of the hash as the Ethereum address
+        // Last 20 bytes is the Ethereum address
         let address = format!("0x{}", hex::encode(&hash[12..]));
         
         Ok(address)
@@ -139,6 +135,6 @@ impl EthereumClient {
 
     #[allow(dead_code)]
     pub fn get_address_from_share(key_share: &KeyShare) -> Result<String> {
-        Self::derive_address_from_public_key(&key_share.verifying_key)
+        Self::derive_address_from_public_key(&key_share.public_key)
     }
 } 

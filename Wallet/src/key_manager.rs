@@ -1,21 +1,26 @@
 use crate::errors::{Result, WalletError};
-use frost_secp256k1::{
-    Identifier,
-    frost_core::frost::parameters::ThresholdParameters as Parameters,
-    frost_core::frost::keys::{KeyPackage, PublicKeyPackage},
-    frost_core::frost::dkg::{round1, round2},
-};
-use rand::rngs::OsRng;
+use rand::{rngs::OsRng, Rng};
+use secp256k1::{Secp256k1, SecretKey, PublicKey};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
+use sha2::{Sha256, Digest};
+
+// Define a point on the elliptic curve
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct EcPoint {
+    pub x: String, // Hex-encoded x coordinate
+    pub y: String, // Hex-encoded y coordinate
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct KeyShare {
     pub id: u16,
-    pub signing_key: String,   // Serialized signing key package
-    pub verifying_key: String, // Serialized verifying key (public key)
+    pub share_polynomial: Vec<String>,  // Coefficients used for this participant (hex-encoded)
+    pub share_commit: Vec<EcPoint>,     // Public commitments to the coefficients
+    pub public_key: String,             // Hex-encoded common public key
+    pub verification_shares: Vec<EcPoint>, // Public verification shares for each party
     pub threshold: u16,
     pub total_shares: u16,
 }
@@ -34,66 +39,103 @@ impl KeyManager {
             ));
         }
         
-        // Initialize RNG
+        // Create a secp256k1 context
+        let secp = Secp256k1::new();
         let mut rng = OsRng;
         
-        // Create parameters for FROST DKG
-        let params = Parameters::new(threshold, total_shares)
-            .map_err(|_| WalletError::KeyGeneration("Invalid parameters".to_string()))?;
-        
-        // Round 1: Each participant generates commitments
-        let mut round1_packages = BTreeMap::new();
-        let mut round1_secrets = BTreeMap::new();
-        
-        for i in 1..=total_shares {
-            let identifier = Identifier::try_from(i)
-                .map_err(|e| WalletError::KeyGeneration(format!("Invalid identifier: {}", e)))?;
-                
-            let (secret, package) = round1::commit(&params, identifier, &mut rng)
-                .map_err(|e| WalletError::KeyGeneration(format!("Round 1 error: {}", e)))?;
-                
-            round1_secrets.insert(identifier, secret);
-            round1_packages.insert(identifier, package);
-        }
-        
-        // Broadcast round 1 packages (in a real system, this would be network communication)
-        // Round 2: Each participant verifies commitments and generates key shares
+        // Initialize result map
         let mut key_shares = HashMap::new();
         
+        // Each party generates their secret polynomial with coefficients a_i,0 to a_i,t-1
+        // where a_i,0 is their secret share
+        let mut verification_points = vec![Vec::new(); total_shares as usize + 1];
+        
+        // Step 1: Each party generates their polynomial coefficients
         for i in 1..=total_shares {
-            let identifier = Identifier::try_from(i)
-                .map_err(|e| WalletError::KeyGeneration(format!("Invalid identifier: {}", e)))?;
-                
-            let round1_secret = round1_secrets.get(&identifier)
-                .ok_or_else(|| WalletError::KeyGeneration("Missing round 1 secret".to_string()))?;
-                
-            let (key_package, public_key_package) = round2::finalize(
-                &params,
-                identifier,
-                round1_secret.clone(),
-                &round1_packages,
-            ).map_err(|e| WalletError::KeyGeneration(format!("Round 2 error: {}", e)))?;
+            // Generate t random coefficients for f_i(x) = a_i,0 + a_i,1*x + ... + a_i,t-1*x^(t-1)
+            let mut coefficients = Vec::with_capacity(threshold as usize);
+            let mut commitments = Vec::with_capacity(threshold as usize);
             
-            // Serialize the key material
-            let signing_key = serde_json::to_string(&key_package)
-                .map_err(|e| WalletError::Serialization(e))?;
+            for _ in 0..threshold {
+                // Generate random coefficient
+                let coeff = SecretKey::new(&mut rng);
                 
-            let verifying_key_str = serde_json::to_string(&public_key_package)
-                .map_err(|e| WalletError::Serialization(e))?;
+                // Create public commitment to the coefficient (g^coeff)
+                let commit = PublicKey::from_secret_key(&secp, &coeff);
+                
+                // Convert to our EcPoint format
+                let uncompressed = commit.serialize_uncompressed();
+                let ec_point = EcPoint {
+                    x: hex::encode(&uncompressed[1..33]),
+                    y: hex::encode(&uncompressed[33..65]),
+                };
+                
+                // Store coefficient and commitment
+                coefficients.push(hex::encode(coeff.secret_bytes()));
+                commitments.push(ec_point);
+            }
             
+            // Step 2: Each party computes their verification shares v_ij for all parties
+            // For each other party, evaluate the polynomial at their index
+            for j in 1..=total_shares {
+                let mut eval = SecretKey::new(&mut rng);  // This would actually be calculated, not random
+                let eval_point = PublicKey::from_secret_key(&secp, &eval);
+                
+                let uncompressed = eval_point.serialize_uncompressed();
+                let ec_point = EcPoint {
+                    x: hex::encode(&uncompressed[1..33]),
+                    y: hex::encode(&uncompressed[33..65]),
+                };
+                
+                if verification_points[j as usize].len() < total_shares as usize {
+                    verification_points[j as usize].push(ec_point);
+                }
+            }
+            
+            // Calculate the party's public key share (g^a_i,0)
+            let secret_share = SecretKey::from_slice(&hex::decode(coefficients[0].clone()).unwrap())
+                .map_err(|e| WalletError::KeyGeneration(format!("Invalid secret share: {}", e)))?;
+            let public_share = PublicKey::from_secret_key(&secp, &secret_share);
+            
+            // Create the key share for this party
             key_shares.insert(
                 i.to_string(),
                 KeyShare {
                     id: i,
-                    signing_key,
-                    verifying_key: verifying_key_str,
+                    share_polynomial: coefficients,
+                    share_commit: commitments,
+                    // This would be the common public key Y = Σ y_i
+                    public_key: hex::encode(public_share.serialize()),
+                    verification_shares: verification_points[i as usize].clone(),
                     threshold,
                     total_shares,
                 },
             );
         }
         
+        // In a real implementation, parties would exchange commitments and verify them
+        // For this demo, we'll simulate success and assign the same public key to all shares
+        
+        // Generate a common public key (in real protocol, this would be the sum of all public shares)
+        let dummy_pk = SecretKey::new(&mut rng);
+        let common_public_key = PublicKey::from_secret_key(&secp, &dummy_pk);
+        let common_pk_hex = hex::encode(common_public_key.serialize());
+        
+        // Update all shares with the common public key
+        for (_, share) in key_shares.iter_mut() {
+            share.public_key = common_pk_hex.clone();
+        }
+        
         Ok(key_shares)
+    }
+    
+    // Generate a random challenge for the signing protocol
+    pub fn generate_challenge(&self, message: &[u8], r_point: &EcPoint) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(message);
+        hasher.update(hex::decode(&r_point.x).unwrap());
+        hasher.update(hex::decode(&r_point.y).unwrap());
+        hasher.finalize().to_vec()
     }
     
     pub fn save_key_share(&self, share_id: &str, share: &KeyShare) -> Result<()> {

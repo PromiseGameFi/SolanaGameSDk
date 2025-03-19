@@ -1,27 +1,28 @@
 use crate::errors::{Result, WalletError};
-use crate::key_manager::{KeyManager, KeyShare};
-use frost_secp256k1::{
-    Identifier,
-    frost_core::frost::parameters::ThresholdParameters as Parameters,
-    frost_core::frost::keys::{KeyPackage, PublicKeyPackage},
-    frost_core::frost::round1,
-    frost_core::frost::round2,
-    frost_core::frost::SigningPackage,
-    frost_core::frost::Signature,
-    frost_core::frost::aggregate,
-};
-use rand::rngs::OsRng;
+use crate::key_manager::{KeyManager, KeyShare, EcPoint};
+use rand::{rngs::OsRng, Rng};
+use secp256k1::{Secp256k1, SecretKey, PublicKey, Message as Secp256k1Message};
 use sha2::{Sha256, Digest};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use hex;
 
-#[derive(serde::Serialize, serde::Deserialize)]
+// Commitment to a nonce (First round of signing)
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct NonceCommitment {
+    pub share_id: String,
+    pub r_commitment: EcPoint,  // Public point R_i = g^k_i
+    pub session_id: String,     // Unique session ID for this signing
+}
+
+// Partial signature (Second round of signing)
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
 pub struct PartialSignature {
     pub share_id: String,
-    pub commitment: String,      // Serialized commitment
-    pub response: String,        // Serialized signing response
+    pub r_point: EcPoint,        // Final common R point
+    pub s_share: String,         // s_i component
     pub threshold: u16,
     pub total_shares: u16,
+    pub session_id: String,      // Same session ID as commitment round
 }
 
 pub struct Signer {
@@ -35,161 +36,189 @@ impl Signer {
         }
     }
     
-    // Create a partial signature - WITHOUT reconstructing the private key
-    pub fn create_partial_signature(&self, key_share: &KeyShare, message: &[u8]) -> Result<PartialSignature> {
-        // Hash the message
-        let mut hasher = Sha256::new();
-        hasher.update(message);
-        let message_hash = hasher.finalize();
+    // First round: Generate nonce and commitment
+    pub fn create_nonce_commitment(&self, key_share: &KeyShare, message: &[u8]) -> Result<NonceCommitment> {
+        // Create a unique session ID
+        let session_id = self.generate_session_id(message, key_share.id);
         
-        // Deserialize the signing key package
-        let key_package: KeyPackage = serde_json::from_str(&key_share.signing_key)
-            .map_err(|e| WalletError::Serialization(e))?;
-            
-        // Get the participant's identifier
-        let identifier = Identifier::try_from(key_share.id)
-            .map_err(|e| WalletError::Signing(format!("Invalid identifier: {}", e)))?;
-        
-        // Initialize RNG
+        // Generate a random nonce k_i
+        let secp = Secp256k1::new();
         let mut rng = OsRng;
+        let k_i = SecretKey::new(&mut rng);
         
-        // Round 1: Generate nonce and commitment
-        let (nonce, commitment) = round1::commit(
-            &key_package.secret_share(),
-            &mut rng,
-        );
+        // Calculate the commitment R_i = g^k_i
+        let r_i = PublicKey::from_secret_key(&secp, &k_i);
         
-        // In a real implementation, commitments would be exchanged with other participants
-        // Here we simulate a single-party partial signature
-        let mut commitments = BTreeMap::new();
-        commitments.insert(identifier, commitment.clone());
+        // Convert to our EcPoint format
+        let uncompressed = r_i.serialize_uncompressed();
+        let r_point = EcPoint {
+            x: hex::encode(&uncompressed[1..33]),
+            y: hex::encode(&uncompressed[33..65]),
+        };
         
-        // Create a signing package
-        let signing_package = SigningPackage::new(
-            commitments.clone(),
-            &message_hash,
-        );
+        // Normally this commitment would be broadcast to other participants
+        // In a demo, we'll just return it
         
-        // Round 2: Generate partial signature
-        let signature_share = round2::sign(
-            &signing_package,
-            &nonce,
-            &key_package,
-        ).map_err(|e| WalletError::Signing(format!("Signing error: {}", e)))?;
-        
-        // Serialize the commitment and signature share
-        let commitment_str = serde_json::to_string(&commitment)
-            .map_err(|e| WalletError::Serialization(e))?;
-            
-        let response_str = serde_json::to_string(&signature_share)
-            .map_err(|e| WalletError::Serialization(e))?;
-        
-        Ok(PartialSignature {
+        Ok(NonceCommitment {
             share_id: key_share.id.to_string(),
-            commitment: commitment_str,
-            response: response_str,
-            threshold: key_share.threshold,
-            total_shares: key_share.total_shares,
+            r_commitment: r_point,
+            session_id: hex::encode(session_id),
         })
     }
     
-    // Combine partial signatures - WITHOUT reconstructing the private key
+    // Second round: Create partial signature after collecting commitments
+    pub fn create_partial_signature(
+        &self, 
+        key_share: &KeyShare, 
+        message: &[u8],
+        commitments: &[NonceCommitment],
+        session_id: &str,
+    ) -> Result<PartialSignature> {
+        if commitments.is_empty() {
+            return Err(WalletError::Signing("No commitments provided".to_string()));
+        }
+        
+        // Verify all commitments have the same session ID
+        for commit in commitments {
+            if commit.session_id != session_id {
+                return Err(WalletError::Signing("Inconsistent session IDs".to_string()));
+            }
+        }
+        
+        // In a real MPC protocol, each party would verify the commitments
+        // and compute a common R = Σ R_i
+        
+        // For demo, we'll use the first commitment's R value as the common R
+        let r_point = commitments[0].r_commitment.clone();
+        
+        // Generate a deterministic k value (the protocol would actually use the shared value)
+        let nonce_seed = self.derive_nonce_seed(key_share, message, &hex::decode(session_id).unwrap());
+        let k_i = self.generate_deterministic_nonce(&nonce_seed);
+        
+        // Calculate the challenge e = H(m || R)
+        let challenge = self.key_manager.generate_challenge(message, &r_point);
+        
+        // Compute partial signature s_i = k_i + e * x_i
+        // where x_i is the party's secret share (first coefficient of polynomial)
+        let s_i = self.compute_partial_signature(key_share, &k_i.secret_bytes(), &challenge);
+        
+        Ok(PartialSignature {
+            share_id: key_share.id.to_string(),
+            r_point,
+            s_share: hex::encode(s_i),
+            threshold: key_share.threshold,
+            total_shares: key_share.total_shares,
+            session_id: session_id.to_string(),
+        })
+    }
+    
+    // Combine partial signatures to create a complete signature
     pub fn combine_signatures(
         &self,
         partial_signatures: &[PartialSignature],
         message: &[u8],
-        verifying_key_str: &str,
     ) -> Result<Vec<u8>> {
-        // Check if we have enough partial signatures
         if partial_signatures.is_empty() {
-            return Err(WalletError::Threshold("No partial signatures provided".to_string()));
+            return Err(WalletError::Threshold("No signatures provided".to_string()));
         }
         
-        // Get threshold from the first partial signature
-        let threshold = partial_signatures[0].threshold;
+        // Get parameters from the first signature
+        let first_sig = &partial_signatures[0];
+        let r_point = &first_sig.r_point;
+        let threshold = first_sig.threshold;
+        let session_id = &first_sig.session_id;
         
-        // Verify all partial signatures have the same threshold
-        for sig in partial_signatures {
-            if sig.threshold != threshold {
-                return Err(WalletError::Threshold("Mismatched thresholds in partial signatures".to_string()));
-            }
-        }
-        
-        // Check if we have enough partial signatures
+        // Check if we have enough signatures
         if partial_signatures.len() < threshold as usize {
             return Err(WalletError::Threshold(format!(
-                "Not enough partial signatures: got {}, need {}",
-                partial_signatures.len(),
-                threshold
+                "Not enough signatures: have {}, need {}",
+                partial_signatures.len(), threshold
             )));
         }
         
-        // Hash the message
-        let mut hasher = Sha256::new();
-        hasher.update(message);
-        let message_hash = hasher.finalize();
-        
-        // Collect commitments and responses
-        let mut commitments = BTreeMap::new();
-        let mut responses = BTreeMap::new();
-        
+        // Verify all signatures belong to the same session
         for sig in partial_signatures {
-            let id = Identifier::try_from(sig.share_id.parse::<u16>().unwrap())
-                .map_err(|e| WalletError::Signing(format!("Invalid identifier: {}", e)))?;
-                
-            let commitment = serde_json::from_str(&sig.commitment)
-                .map_err(|e| WalletError::Serialization(e))?;
-                
-            let response = serde_json::from_str(&sig.response)
-                .map_err(|e| WalletError::Serialization(e))?;
-                
-            commitments.insert(id, commitment);
-            responses.insert(id, response);
+            if sig.session_id != *session_id || sig.threshold != threshold {
+                return Err(WalletError::Signing("Inconsistent signatures".to_string()));
+            }
+            
+            // Also verify they all have the same R point
+            if sig.r_point.x != r_point.x || sig.r_point.y != r_point.y {
+                return Err(WalletError::Signing("Inconsistent R points".to_string()));
+            }
         }
         
-        // Create signing package
-        let signing_package = SigningPackage::new(
-            commitments,
-            &message_hash,
-        );
+        // A proper MPC-TSS would use Lagrange interpolation here
+        // We'll simplify by adding s shares (this is not cryptographically correct)
+        let mut s_combined = vec![0u8; 32];
+        for sig in partial_signatures {
+            let s_i = hex::decode(&sig.s_share)
+                .map_err(|e| WalletError::Signing(format!("Invalid s share: {}", e)))?;
+                
+            for i in 0..s_i.len().min(32) {
+                s_combined[i] = s_combined[i].wrapping_add(s_i[i]);
+            }
+        }
         
-        // Deserialize the verifying key
-        let verifying_key: PublicKeyPackage = serde_json::from_str(verifying_key_str)
-            .map_err(|e| WalletError::Serialization(e))?;
+        // Extract r value from the R point
+        let r_bytes = hex::decode(&r_point.x)
+            .map_err(|e| WalletError::Signing(format!("Invalid R point: {}", e)))?;
         
-        // Aggregate partial signatures to create a complete signature
-        // This combines partial signatures WITHOUT reconstructing the private key
-        let signature = aggregate(
-            &signing_package,
-            &responses,
-            &verifying_key,
-        ).map_err(|e| WalletError::Signing(format!("Signature aggregation error: {}", e)))?;
+        // Create an Ethereum-compatible signature (65 bytes: r, s, v)
+        let mut signature = Vec::with_capacity(65);
+        signature.extend_from_slice(&r_bytes);
+        signature.extend_from_slice(&s_combined);
+        signature.push(0); // v value (recovery ID)
         
-        // Convert FROST signature to Ethereum compatible format
-        self.convert_frost_to_ethereum_signature(signature)
+        Ok(signature)
     }
     
-    // Convert FROST Schnorr signature to Ethereum compatible ECDSA signature
-    fn convert_frost_to_ethereum_signature(&self, signature: Signature) -> Result<Vec<u8>> {
-        // This is a simplified conversion - in a real implementation, we would need a more complex
-        // conversion process to map Schnorr signatures to Ethereum's ECDSA format.
+    // Generate a unique session ID
+    fn generate_session_id(&self, message: &[u8], party_id: u16) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(message);
+        hasher.update(party_id.to_be_bytes());
+        hasher.update(OsRng.gen::<[u8; 32]>()); // Add random component
+        hasher.finalize().to_vec()
+    }
+    
+    // Derive a nonce seed deterministically
+    fn derive_nonce_seed(&self, share: &KeyShare, message: &[u8], session_id: &[u8]) -> Vec<u8> {
+        let mut hasher = Sha256::new();
+        hasher.update(hex::decode(&share.share_polynomial[0]).unwrap()); // Secret share
+        hasher.update(message);
+        hasher.update(session_id);
+        hasher.finalize().to_vec()
+    }
+    
+    // Generate a deterministic nonce from seed
+    fn generate_deterministic_nonce(&self, seed: &[u8]) -> SecretKey {
+        let mut hasher = Sha256::new();
+        hasher.update(seed);
+        let nonce_bytes = hasher.finalize();
         
-        // For Ethereum, we need a 65-byte signature (r, s, v)
-        let mut sig_bytes = Vec::with_capacity(65);
+        SecretKey::from_slice(&nonce_bytes)
+            .expect("Failed to create nonce from hash")
+    }
+    
+    // Compute partial signature s_i = k_i + e * x_i
+    fn compute_partial_signature(&self, share: &KeyShare, k_i: &[u8], challenge: &[u8]) -> Vec<u8> {
+        // This implementation is a simplified version
+        // A real implementation would use proper EC math
         
-        // Get R and s components from FROST signature
-        // Use public methods instead of accessing private fields
-        let serialized = signature.serialize();
+        // Parse the party's secret share
+        let x_i = hex::decode(&share.share_polynomial[0]).unwrap();
         
-        // FROST signature format for Secp256k1 is typically 64 bytes (R_x || s)
-        // We'll add a recovery byte for Ethereum
-        sig_bytes.extend_from_slice(&serialized[0..32]); // R component (r)
-        sig_bytes.extend_from_slice(&serialized[32..64]); // s component
-        sig_bytes.push(0); // recovery ID (placeholder)
+        // Simple computation: s_i = k_i + e * x_i
+        let mut s_i = vec![0u8; 32];
+        for i in 0..32 {
+            let e_i = challenge[i % challenge.len()];
+            let x_i_val = x_i[i % x_i.len()];
+            let k_i_val = k_i[i % k_i.len()];
+            
+            s_i[i] = k_i_val.wrapping_add(e_i.wrapping_mul(x_i_val));
+        }
         
-        // Note: This signature won't verify on Ethereum without proper conversion
-        // A real implementation would use advanced techniques to convert between signature schemes
-        
-        Ok(sig_bytes)
+        s_i
     }
 } 

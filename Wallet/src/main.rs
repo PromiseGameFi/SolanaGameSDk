@@ -5,7 +5,7 @@ mod eth;
 
 use errors::{Result, WalletError};
 use key_manager::KeyManager;
-use signer::{Signer, PartialSignature};
+use signer::{Signer, PartialSignature, NonceCommitment, EcPoint};
 use eth::EthereumClient;
 
 use clap::{Parser, Subcommand};
@@ -33,7 +33,7 @@ enum Commands {
         #[clap(short, long)]
         shares: u16,
     },
-    /// Create a partial signature for a transaction
+    /// Create nonce commitment (Round 1)
     Sign {
         /// Share ID to use
         #[clap(short, long)]
@@ -44,6 +44,15 @@ enum Commands {
         /// Amount to send in ETH
         #[clap(short, long)]
         amount: String,
+    },
+    /// Create partial signature (Round 2)
+    SignRound2 {
+        /// Share ID to use
+        #[clap(short, long)]
+        share_id: String,
+        /// Commitment files from Round 1
+        #[clap(short, long)]
+        commitment_files: Vec<String>,
     },
     /// Combine partial signatures
     Combine {
@@ -98,7 +107,7 @@ async fn main() -> Result<()> {
                 
                 // Derive address from the first share (all shares have the same public key)
                 if address.is_none() {
-                    address = Some(EthereumClient::derive_address_from_public_key(&share.verifying_key)?);
+                    address = Some(EthereumClient::derive_address_from_public_key(&share.public_key)?);
                 }
             }
             
@@ -111,7 +120,7 @@ async fn main() -> Result<()> {
             Ok(())
         },
         Commands::Sign { share_id, to, amount } => {
-            println!("Creating partial signature with share {}", share_id);
+            println!("Creating signature with share {} - ROUND 1: Nonce commitment", share_id);
             
             let key_manager = KeyManager::new();
             let key_share = key_manager.load_key_share(&share_id)?;
@@ -129,7 +138,7 @@ async fn main() -> Result<()> {
             let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
             
             // Derive Ethereum address from public key
-            let address = EthereumClient::derive_address_from_public_key(&key_share.verifying_key)?;
+            let address = EthereumClient::derive_address_from_public_key(&key_share.public_key)?;
             println!("Wallet address: {}", address);
             
             let nonce = eth_client.get_nonce(&address).await?;
@@ -151,25 +160,101 @@ async fn main() -> Result<()> {
             
             println!("Transaction hash to sign: {}", hex::encode(tx_hash));
             
-            // Create partial signature WITHOUT reconstructing the private key
-            let partial_sig = signer.create_partial_signature(&key_share, &tx_hash)?;
+            // ROUND 1: Create nonce commitment
+            let commitment = signer.create_nonce_commitment(&key_share, &tx_hash)?;
+            
+            // Save commitment data
+            let commitment_data = serde_json::json!({
+                "share_id": commitment.share_id,
+                "r_commitment": {
+                    "x": commitment.r_commitment.x,
+                    "y": commitment.r_commitment.y
+                },
+                "session_id": commitment.session_id,
+                "tx_hash": hex::encode(tx_hash),
+                "tx_data": serde_json::to_string(&tx)?,
+                "public_key": key_share.public_key,
+            });
+            
+            let commitment_file = format!("commit_{}_{}.json", share_id, hex::encode(&tx_hash[0..4]));
+            fs::write(&commitment_file, serde_json::to_string_pretty(&commitment_data)?)?;
+            
+            println!("Nonce commitment saved to {}", commitment_file);
+            println!("Collect commitments from all signers, then run sign-round2 command");
+            
+            Ok(())
+        },
+        Commands::SignRound2 { share_id, commitment_files } => {
+            println!("Creating signature with share {} - ROUND 2: Partial signature", share_id);
+            
+            let key_manager = KeyManager::new();
+            let key_share = key_manager.load_key_share(&share_id)?;
+            
+            let signer = Signer::new();
+            
+            // Load all commitments
+            let mut tx_hash = None;
+            let mut tx_data = None;
+            let mut commitments = Vec::new();
+            let mut session_id = None;
+            
+            for file in &commitment_files {
+                let data = fs::read_to_string(file)?;
+                let commit_data: serde_json::Value = serde_json::from_str(&data)?;
+                
+                let commitment = NonceCommitment {
+                    share_id: commit_data["share_id"].as_str().unwrap().to_string(),
+                    r_commitment: EcPoint {
+                        x: commit_data["r_commitment"]["x"].as_str().unwrap().to_string(),
+                        y: commit_data["r_commitment"]["y"].as_str().unwrap().to_string(),
+                    },
+                    session_id: commit_data["session_id"].as_str().unwrap().to_string(),
+                };
+                
+                if session_id.is_none() {
+                    session_id = Some(commitment.session_id.clone());
+                    tx_hash = Some(hex::decode(commit_data["tx_hash"].as_str().unwrap())?);
+                    tx_data = Some(commit_data["tx_data"].as_str().unwrap().to_string());
+                }
+                
+                commitments.push(commitment);
+            }
+            
+            if commitments.is_empty() {
+                return Err(WalletError::Signing("No commitments provided".to_string()));
+            }
+            
+            let session_id = session_id.unwrap();
+            let tx_hash = tx_hash.unwrap();
+            
+            // ROUND 2: Create partial signature
+            let partial_sig = signer.create_partial_signature(
+                &key_share, 
+                &tx_hash, 
+                &commitments, 
+                &session_id
+            )?;
             
             // Save signature data
             let signature_data = serde_json::json!({
                 "share_id": partial_sig.share_id,
-                "commitment": partial_sig.commitment,
-                "response": partial_sig.response,
+                "r_point": {
+                    "x": partial_sig.r_point.x,
+                    "y": partial_sig.r_point.y
+                },
+                "s_share": partial_sig.s_share,
                 "threshold": partial_sig.threshold,
                 "total_shares": partial_sig.total_shares,
+                "session_id": partial_sig.session_id,
                 "tx_hash": hex::encode(tx_hash),
-                "tx_data": serde_json::to_string(&tx)?,
-                "verifying_key": key_share.verifying_key,
+                "tx_data": tx_data,
             });
             
             let signature_file = format!("sig_{}_{}.json", share_id, hex::encode(&tx_hash[0..4]));
             fs::write(&signature_file, serde_json::to_string_pretty(&signature_data)?)?;
             
             println!("Partial signature saved to {}", signature_file);
+            println!("Collect partial signatures from enough signers, then run combine command");
             
             Ok(())
         },
@@ -180,7 +265,6 @@ async fn main() -> Result<()> {
             let mut tx_data = None;
             let mut tx_hash = None;
             let mut partial_sigs = Vec::new();
-            let mut verifying_key = None;
             
             for file in &signature_files {
                 let data = fs::read_to_string(file)?;
@@ -188,17 +272,20 @@ async fn main() -> Result<()> {
                 
                 let partial_sig = PartialSignature {
                     share_id: sig_data["share_id"].as_str().unwrap().to_string(),
-                    commitment: sig_data["commitment"].as_str().unwrap().to_string(),
-                    response: sig_data["response"].as_str().unwrap().to_string(),
+                    r_point: EcPoint {
+                        x: sig_data["r_point"]["x"].as_str().unwrap().to_string(),
+                        y: sig_data["r_point"]["y"].as_str().unwrap().to_string(),
+                    },
+                    s_share: sig_data["s_share"].as_str().unwrap().to_string(),
                     threshold: sig_data["threshold"].as_u64().unwrap() as u16,
                     total_shares: sig_data["total_shares"].as_u64().unwrap() as u16,
+                    session_id: sig_data["session_id"].as_str().unwrap().to_string(),
                 };
                 
-                // Keep track of transaction data and verifying key
+                // Keep track of transaction data
                 if tx_data.is_none() {
                     tx_data = Some(sig_data["tx_data"].as_str().unwrap().to_string());
                     tx_hash = Some(hex::decode(sig_data["tx_hash"].as_str().unwrap())?);
-                    verifying_key = Some(sig_data["verifying_key"].as_str().unwrap().to_string());
                 }
                 
                 partial_sigs.push(partial_sig);
@@ -209,14 +296,12 @@ async fn main() -> Result<()> {
             }
             
             let tx_hash = tx_hash.unwrap();
-            let verifying_key = verifying_key.unwrap();
             
-            // Combine signatures WITHOUT reconstructing the private key
+            // Combine signatures
             let signer = Signer::new();
             let signature = signer.combine_signatures(
                 &partial_sigs,
                 &tx_hash,
-                &verifying_key,
             )?;
             
             println!("Combined signature: {}", hex::encode(&signature));
@@ -267,7 +352,7 @@ async fn main() -> Result<()> {
             let key_manager = KeyManager::new();
             let key_share = key_manager.load_key_share(&share_id)?;
             
-            let address = EthereumClient::derive_address_from_public_key(&key_share.verifying_key)?;
+            let address = EthereumClient::derive_address_from_public_key(&key_share.public_key)?;
             
             println!("Ethereum Address: {}", address);
             println!("Threshold: {} of {} shares", key_share.threshold, key_share.total_shares);
