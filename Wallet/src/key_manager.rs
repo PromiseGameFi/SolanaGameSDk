@@ -1,5 +1,5 @@
 use crate::errors::{Result, WalletError};
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 use secp256k1::{Secp256k1, SecretKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -78,7 +78,7 @@ impl KeyManager {
             // Step 2: Each party computes their verification shares v_ij for all parties
             // For each other party, evaluate the polynomial at their index
             for j in 1..=total_shares {
-                let mut eval = SecretKey::new(&mut rng);  // This would actually be calculated, not random
+                let eval = SecretKey::new(&mut rng);
                 let eval_point = PublicKey::from_secret_key(&secp, &eval);
                 
                 let uncompressed = eval_point.serialize_uncompressed();

@@ -6,8 +6,7 @@ use ethers::{
 };
 use std::str::FromStr;
 use crate::key_manager::KeyShare;
-use secp256k1::{PublicKey, Secp256k1};
-use serde_json;
+use secp256k1::PublicKey;
 use hex;
 
 #[derive(Debug)]

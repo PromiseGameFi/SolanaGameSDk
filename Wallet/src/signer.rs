@@ -1,9 +1,8 @@
 use crate::errors::{Result, WalletError};
 use crate::key_manager::{KeyManager, KeyShare, EcPoint};
 use rand::{rngs::OsRng, Rng};
-use secp256k1::{Secp256k1, SecretKey, PublicKey, Message as Secp256k1Message};
+use secp256k1::{Secp256k1, SecretKey, PublicKey};
 use sha2::{Sha256, Digest};
-use std::collections::HashMap;
 use hex;
 
 // Commitment to a nonce (First round of signing)
@@ -116,7 +115,7 @@ impl Signer {
     pub fn combine_signatures(
         &self,
         partial_signatures: &[PartialSignature],
-        message: &[u8],
+        _message: &[u8],   // Add underscore to indicate intentionally unused
     ) -> Result<Vec<u8>> {
         if partial_signatures.is_empty() {
             return Err(WalletError::Threshold("No signatures provided".to_string()));
@@ -178,7 +177,7 @@ impl Signer {
         let mut hasher = Sha256::new();
         hasher.update(message);
         hasher.update(party_id.to_be_bytes());
-        hasher.update(OsRng.gen::<[u8; 32]>()); // Add random component
+        hasher.update(OsRng.r#gen::<[u8; 32]>()); // Add random component
         hasher.finalize().to_vec()
     }
     

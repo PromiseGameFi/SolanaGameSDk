@@ -5,7 +5,8 @@ mod eth;
 
 use errors::{Result, WalletError};
 use key_manager::KeyManager;
-use signer::{Signer, PartialSignature, NonceCommitment, EcPoint};
+use signer::{Signer, PartialSignature, NonceCommitment};
+use key_manager::EcPoint;
 use eth::EthereumClient;
 
 use clap::{Parser, Subcommand};
@@ -68,6 +69,12 @@ enum Commands {
     },
     /// Get Ethereum address from a key share
     GetAddress {
+        /// Share ID to use
+        #[clap(short, long)]
+        share_id: String,
+    },
+    /// Get address and balance from a key share
+    GetWalletInfo {
         /// Share ID to use
         #[clap(short, long)]
         share_id: String,
@@ -158,7 +165,7 @@ async fn main() -> Result<()> {
                 None,
             )?;
             
-            println!("Transaction hash to sign: {}", hex::encode(tx_hash));
+            println!("Transaction hash to sign: {}", hex::encode(&tx_hash));
             
             // ROUND 1: Create nonce commitment
             let commitment = signer.create_nonce_commitment(&key_share, &tx_hash)?;
@@ -171,7 +178,7 @@ async fn main() -> Result<()> {
                     "y": commitment.r_commitment.y
                 },
                 "session_id": commitment.session_id,
-                "tx_hash": hex::encode(tx_hash),
+                "tx_hash": hex::encode(&tx_hash),
                 "tx_data": serde_json::to_string(&tx)?,
                 "public_key": key_share.public_key,
             });
@@ -246,7 +253,7 @@ async fn main() -> Result<()> {
                 "threshold": partial_sig.threshold,
                 "total_shares": partial_sig.total_shares,
                 "session_id": partial_sig.session_id,
-                "tx_hash": hex::encode(tx_hash),
+                "tx_hash": hex::encode(&tx_hash),
                 "tx_data": tx_data,
             });
             
@@ -356,6 +363,36 @@ async fn main() -> Result<()> {
             
             println!("Ethereum Address: {}", address);
             println!("Threshold: {} of {} shares", key_share.threshold, key_share.total_shares);
+            
+            Ok(())
+        },
+        Commands::GetWalletInfo { share_id } => {
+            println!("Retrieving wallet info from share {}", share_id);
+            
+            // Load the key share
+            let key_manager = KeyManager::new();
+            let key_share = key_manager.load_key_share(&share_id)?;
+            
+            // Derive the Ethereum address from the public key
+            let address = EthereumClient::derive_address_from_public_key(&key_share.public_key)?;
+            println!("Ethereum Address: {}", address);
+            println!("Threshold: {} of {} shares", key_share.threshold, key_share.total_shares);
+            
+            // Get the balance
+            let rpc_url = env::var("ETH_RPC_URL")
+                .map_err(|_| WalletError::Ethereum("ETH_RPC_URL not set".to_string()))?;
+            
+            let chain_id = env::var("ETH_CHAIN_ID")
+                .map_err(|_| WalletError::Ethereum("ETH_CHAIN_ID not set".to_string()))?
+                .parse::<u64>()
+                .map_err(|_| WalletError::Ethereum("Invalid ETH_CHAIN_ID".to_string()))?;
+            
+            let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
+            
+            let balance = eth_client.get_balance(&address).await?;
+            let balance_eth = ethers::utils::format_ether(balance);
+            
+            println!("Balance: {} ETH", balance_eth);
             
             Ok(())
         },

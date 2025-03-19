@@ -8,3 +8,5 @@ cargo run -- generate-keys --threshold 2 --shares 3
    cargo run -- sign-round2 --share-id 2 --commitment-files commit_1_abcd.json commit_2_abcd.json
 
       cargo run -- combine --signature-files sig_1_abcd.json sig_2_abcd.json
+
+      cargo run -- get-wallet-info --share-id 1
