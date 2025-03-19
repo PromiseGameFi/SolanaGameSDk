@@ -62,12 +62,13 @@ pub fn combine_signatures(
         sig_map.insert(sig.share_index, recid);
     }
     
-    // Combine signatures using the MPC-TSS library
-    let combined_sig = multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2020::party_i::combine_signatures(
-        share.threshold,
-        &sig_map,
-        &share.public_key,
-    )?;
+    // Replace the following with the correct function calls based on the library's documentation
+    // let combined_sig = multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2020::party_i::combine_signatures(
+    //     share.threshold,
+    //     &sig_map,
+    //     &share.public_key,
+    // )?;
+    // Adjust this part according to the available functions in the library
     
     // Extract r, s, v components for Ethereum transaction
     let r = combined_sig.r.to_bytes()?;

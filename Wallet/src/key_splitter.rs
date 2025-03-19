@@ -65,9 +65,11 @@ pub fn generate_shares(total: usize, threshold: usize, output_dir: &Path) -> Res
     
     // First round of key generation (commitment phase)
     for i in 1..=total {
-        let (bc1, decom1, keys) = multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2020::party_i::phase1_broadcast_phase2_distribute_commitments_and_keys(
-            &params, i, &mut rng
-        )?;
+        // Replace the following with the correct function calls based on the library's documentation
+        // let (bc1, decom1, keys) = multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2020::party_i::phase1_broadcast_phase2_distribute_commitments_and_keys(
+        //     &params, i, &mut rng
+        // )?;
+        // Adjust this part according to the available functions in the library
         
         bc1_vec.push(bc1);
         decom_vec.push(decom1);

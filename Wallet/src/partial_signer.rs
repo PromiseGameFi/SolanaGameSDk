@@ -5,7 +5,7 @@ use ethers::core::types::{Address, TransactionRequest, U256};
 use ethers::utils::rlp::Rlp;
 use ethers::utils::{hash_message, keccak256, parse_ether};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2020::party_i::{
-    SignatureRecid, SignMsg,
+    SignatureRecid,
 };
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -65,12 +65,6 @@ pub async fn create_partial_signature(
     let tx_bytes = tx.rlp_unsigned();
     let message_hash = keccak256(&tx_bytes);
     
-    // Create a SignMsg for the message hash
-    let sign_msg = SignMsg {
-        message: Scalar::from_bytes(&message_hash)
-            .context("Failed to convert message hash to scalar")?,
-    };
-    
     // Initialize a secure random number generator
     let mut rng = OsRng;
     
@@ -79,7 +73,7 @@ pub async fn create_partial_signature(
     
     // Generate partial signature
     let signature_recid = multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2020::party_i::sign(
-        &sign_msg,
+        &message_hash,
         &share.keys,
         &share.index,
         &share.threshold,

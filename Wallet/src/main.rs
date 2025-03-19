@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use ethers::providers::{Http, Provider, Middleware};
 use ethers::core::types::transaction::eip2718::TypedTransaction;
