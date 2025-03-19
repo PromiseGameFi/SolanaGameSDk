@@ -1,2 +1,0 @@
-[dependencies]
-multi-party-ecdsa = { version = "0.8", features = ["gg20"] } 
