@@ -57,8 +57,8 @@ enum Commands {
     },
     /// Combine partial signatures
     Combine {
-        /// Path to the signature file
-        #[clap(short, long)]
+        /// Path to the signature files
+        #[clap(short, long, num_args = 1..)]
         signature_files: Vec<String>,
     },
     /// Get balance of the wallet

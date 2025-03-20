@@ -74,3 +74,13 @@ tmp/
 temp/
 .env
 private_key.json
+share_1.json
+share_2.json
+share_3.json
+commit_1_ec346bf9.json
+commit_2_ec346bf9.json
+commit_3_ec346bf9.json
+sig_1_ec346bf9.json
+sig_2_ec346bf9.json
+sig_3_ec346bf9.json
+

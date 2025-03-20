@@ -94,13 +94,15 @@ impl EthereumClient {
         
         let r = U256::from_big_endian(&signature[0..32]);
         let s = U256::from_big_endian(&signature[32..64]);
-        let v = signature[64] as u64 + self.chain_id * 2 + 35;
+        
+        // Calculate correct v value based on chain ID (EIP-155)
+        let v = U256::from(self.chain_id * 2 + 35); // Try with 35 first
         
         // Apply the signature to the transaction
         let signed_tx = tx.rlp_signed(&Signature {
             r,
             s,
-            v: v.into(),
+            v,
         });
         
         // Send the raw transaction

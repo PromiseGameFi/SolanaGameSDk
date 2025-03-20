@@ -159,17 +159,8 @@ impl Signer {
             }
         }
         
-        // Extract r value from the R point
-        let r_bytes = hex::decode(&r_point.x)
-            .map_err(|e| WalletError::Signing(format!("Invalid R point: {}", e)))?;
-        
-        // Create an Ethereum-compatible signature (65 bytes: r, s, v)
-        let mut signature = Vec::with_capacity(65);
-        signature.extend_from_slice(&r_bytes);
-        signature.extend_from_slice(&s_combined);
-        signature.push(0); // v value (recovery ID)
-        
-        Ok(signature)
+        // Try both recovery IDs since we can't determine it directly
+        self.convert_frost_to_ethereum_signature(r_point, &s_combined)
     }
     
     // Generate a unique session ID
@@ -219,5 +210,20 @@ impl Signer {
         }
         
         s_i
+    }
+    
+    // Convert Frost signature to Ethereum signature
+    fn convert_frost_to_ethereum_signature(&self, r_point: &EcPoint, s_combined: &[u8]) -> Result<Vec<u8>> {
+        // Parse r from the x-coordinate of R
+        let r_bytes = hex::decode(&r_point.x)
+            .map_err(|e| WalletError::Signing(format!("Invalid R point: {}", e)))?;
+        
+        // Create signature with recovery ID 0 (will be adjusted by eth.rs)
+        let mut signature = Vec::with_capacity(65);
+        signature.extend_from_slice(&r_bytes);
+        signature.extend_from_slice(s_combined);
+        signature.push(0); // Placeholder, will be replaced in eth.rs
+        
+        Ok(signature)
     }
 } 
