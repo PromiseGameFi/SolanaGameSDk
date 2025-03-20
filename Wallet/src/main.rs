@@ -52,7 +52,7 @@ enum Commands {
         #[clap(short, long)]
         share_id: String,
         /// Commitment files from Round 1
-        #[clap(short, long)]
+        #[clap(short, long, num_args = 1..)]
         commitment_files: Vec<String>,
     },
     /// Combine partial signatures

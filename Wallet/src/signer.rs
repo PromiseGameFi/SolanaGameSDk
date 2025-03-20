@@ -1,6 +1,6 @@
 use crate::errors::{Result, WalletError};
 use crate::key_manager::{KeyManager, KeyShare, EcPoint};
-use rand::{rngs::OsRng, Rng};
+use rand::rngs::OsRng;
 use secp256k1::{Secp256k1, SecretKey, PublicKey};
 use sha2::{Sha256, Digest};
 use hex;
@@ -38,7 +38,7 @@ impl Signer {
     // First round: Generate nonce and commitment
     pub fn create_nonce_commitment(&self, key_share: &KeyShare, message: &[u8]) -> Result<NonceCommitment> {
         // Create a unique session ID
-        let session_id = self.generate_session_id(message, key_share.id);
+        let session_id = self.generate_session_id(message);
         
         // Generate a random nonce k_i
         let secp = Secp256k1::new();
@@ -173,11 +173,11 @@ impl Signer {
     }
     
     // Generate a unique session ID
-    fn generate_session_id(&self, message: &[u8], party_id: u16) -> Vec<u8> {
+    fn generate_session_id(&self, message: &[u8]) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(message);
-        hasher.update(party_id.to_be_bytes());
-        hasher.update(OsRng.r#gen::<[u8; 32]>()); // Add random component
+        // Optionally add something unique to this transaction but common to all parties
+        // For example: hasher.update(transaction_nonce.to_be_bytes());
         hasher.finalize().to_vec()
     }
     
