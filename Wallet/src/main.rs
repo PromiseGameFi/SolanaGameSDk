@@ -8,6 +8,8 @@ use key_manager::KeyManager;
 use signer::{Signer, PartialSignature, NonceCommitment};
 use key_manager::EcPoint;
 use eth::EthereumClient;
+use ethers::types::{U256, H256, Address, NameOrAddress};
+use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
 use dotenv::dotenv;
@@ -79,6 +81,21 @@ enum Commands {
         #[clap(short, long)]
         share_id: String,
     },
+    /// Test RPC connection
+    TestConnection {},
+    /// Check transaction status
+    CheckTransaction {
+        /// Transaction hash to check
+        #[clap(short, long)]
+        hash: String,
+    },
+}
+
+fn format_opt<T: std::fmt::Display>(opt: Option<T>) -> String {
+    match opt {
+        Some(val) => format!("{}", val),
+        None => "0".to_string(),
+    }
 }
 
 #[tokio::main]
@@ -160,12 +177,25 @@ async fn main() -> Result<()> {
                 &to,
                 amount_wei,
                 nonce,
-                None,
-                None,
+                Some(ethers::utils::parse_units("30", "gwei").unwrap().into()), // 30 Gwei gas price
+                Some(U256::from(21_000u64)), // 21,000 gas limit
                 None,
             )?;
             
-            println!("Transaction hash to sign: {}", hex::encode(&tx_hash));
+            // Check the chain ID in the transaction
+            if let Some(chain_id) = tx.chain_id() {
+                println!("Transaction has chain_id: {}", chain_id);
+                if chain_id.as_u64() != 11155111 {
+                    println!("⚠️ WARNING: Transaction chain_id ({}) doesn't match Sepolia (11155111)",
+                        chain_id);
+                }
+            } else {
+                println!("❌ ERROR: Transaction doesn't have chain_id set when generating hash for signing!");
+                return Err(WalletError::Ethereum("Transaction missing chain ID".to_string()));
+            }
+            
+            println!("Transaction hash to sign: 0x{}", hex::encode(&tx_hash));
+            println!("Full transaction hash (for reference): 0x{}", hex::encode(&tx_hash));
             
             // ROUND 1: Create nonce commitment
             let commitment = signer.create_nonce_commitment(&key_share, &tx_hash)?;
@@ -180,10 +210,23 @@ async fn main() -> Result<()> {
                 "session_id": commitment.session_id,
                 "tx_hash": hex::encode(&tx_hash),
                 "tx_data": serde_json::to_string(&tx)?,
+                "tx_params": {
+                    "from": format!("{:?}", tx.from().unwrap_or(&Address::zero())),
+                    "to": format!("{:?}", tx.to().unwrap_or(&NameOrAddress::Address(Address::zero()))),
+                    "value": format_opt(tx.value().map(|v| v.to_string())),
+                    "nonce": format_opt(tx.nonce().map(|n| n.to_string())),
+                    "gas_limit": format_opt(tx.gas().map(|g| g.to_string())),
+                    "gas_price": format_opt(tx.gas_price().map(|gp| gp.to_string())),
+                    "chain_id": tx.chain_id().map(|c| c.as_u64()).unwrap_or(chain_id),
+                },
                 "public_key": key_share.public_key,
+                "chain_id": tx.chain_id().map(|c| c.as_u64()).unwrap_or(chain_id),
             });
             
-            let commitment_file = format!("commit_{}_{}.json", share_id, hex::encode(&tx_hash[0..4]));
+            let commitment_file = format!("commit_{}_tx{}.json", 
+                share_id, 
+                hex::encode(&tx_hash[0..8])  // Use 8 bytes instead of 4 for better uniqueness
+            );
             fs::write(&commitment_file, serde_json::to_string_pretty(&commitment_data)?)?;
             
             println!("Nonce commitment saved to {}", commitment_file);
@@ -204,6 +247,14 @@ async fn main() -> Result<()> {
             let mut tx_data = None;
             let mut commitments = Vec::new();
             let mut session_id = None;
+            let mut tx_params = None;
+            
+            // Extract tx_params from the first commitment file before the loop
+            if let Some(commit_file) = commitment_files.first() {
+                let data = fs::read_to_string(commit_file)?;
+                let json: serde_json::Value = serde_json::from_str(&data)?;
+                tx_params = json.get("tx_params").cloned();
+            }
             
             for file in &commitment_files {
                 let data = fs::read_to_string(file)?;
@@ -242,6 +293,15 @@ async fn main() -> Result<()> {
                 &session_id
             )?;
             
+            // First extract chain_id from the commitment data
+            let chain_id = if let Some(commit_data) = commitment_files.first() {
+                let data = fs::read_to_string(commit_data)?;
+                let json: serde_json::Value = serde_json::from_str(&data)?;
+                json.get("chain_id").and_then(|v| v.as_u64())
+            } else {
+                None
+            };
+            
             // Save signature data
             let signature_data = serde_json::json!({
                 "share_id": partial_sig.share_id,
@@ -255,9 +315,15 @@ async fn main() -> Result<()> {
                 "session_id": partial_sig.session_id,
                 "tx_hash": hex::encode(&tx_hash),
                 "tx_data": tx_data,
+                "chain_id": chain_id,
+                "public_key": key_share.public_key,
+                "tx_params": tx_params,
             });
             
-            let signature_file = format!("sig_{}_{}.json", share_id, hex::encode(&tx_hash[0..4]));
+            let signature_file = format!("sig_{}_tx{}.json", 
+                share_id, 
+                hex::encode(&tx_hash[0..8])  // Same change here
+            );
             fs::write(&signature_file, serde_json::to_string_pretty(&signature_data)?)?;
             
             println!("Partial signature saved to {}", signature_file);
@@ -304,6 +370,64 @@ async fn main() -> Result<()> {
             
             let tx_hash = tx_hash.unwrap();
             
+            // Extract the chain ID from the signature files
+            let chain_id = if let Some(file) = signature_files.first() {
+                let data = fs::read_to_string(file)?;
+                let sig_json: serde_json::Value = serde_json::from_str(&data)?;
+                sig_json.get("chain_id").and_then(|v| v.as_u64())
+            } else {
+                None
+            };
+            
+            // First try to deserialize normally
+            let mut tx: ethers::types::transaction::eip2718::TypedTransaction = 
+                serde_json::from_str(&tx_data.unwrap())?;
+
+            // Check if chain ID is missing
+            if tx.chain_id().is_none() {
+                println!("Transaction missing chain ID after deserialization - fixing from stored params");
+                
+                // Extract transaction parameters from first signature file
+                let sig_data = fs::read_to_string(&signature_files[0])?;
+                let sig_json: serde_json::Value = serde_json::from_str(&sig_data)?;
+                
+                // Get the chain ID and other params from tx_params
+                if let Some(tx_params) = sig_json.get("tx_params") {
+                    if let Some(chain_id) = tx_params.get("chain_id").and_then(|v| v.as_u64()) {
+                        println!("Restoring chain ID from transaction parameters: {}", chain_id);
+                        tx.set_chain_id(chain_id);
+                    }
+                } else if let Some(chain_id) = sig_json.get("chain_id").and_then(|v| v.as_u64()) {
+                    println!("Restoring chain ID from signature data: {}", chain_id);
+                    tx.set_chain_id(chain_id);
+                }
+            }
+            
+            // Now verify the from address
+            if let Some(from) = tx.from() {
+                let from_str = format!("{:?}", from);
+                
+                // Derive the address from the public key in the first signature
+                if !partial_sigs.is_empty() {
+                    let sig_data = fs::read_to_string(&signature_files[0])?;
+                    let sig_json: serde_json::Value = serde_json::from_str(&sig_data)?;
+                    if let Some(public_key) = sig_json.get("public_key").and_then(|v| v.as_str()) {
+                        let derived_address = EthereumClient::derive_address_from_public_key(public_key)?;
+                        
+                        println!("Transaction From address: {}", from_str);
+                        println!("Derived wallet address: {}", derived_address);
+                        
+                        if from_str.to_lowercase() != derived_address.to_lowercase() {
+                            println!("⚠️ WARNING: Transaction From address doesn't match derived address!");
+                            println!("This will cause your transaction to fail!");
+                        }
+                    }
+                }
+            }
+            
+            // Verify chain ID
+            println!("Verifying chain ID...");
+            
             // Combine signatures
             let signer = Signer::new();
             let signature = signer.combine_signatures(
@@ -317,40 +441,45 @@ async fn main() -> Result<()> {
             let rpc_url = env::var("ETH_RPC_URL")
                 .map_err(|_| WalletError::Ethereum("ETH_RPC_URL not set".to_string()))?;
             
+            println!("Using RPC URL: {}", rpc_url);
+            
             let chain_id = env::var("ETH_CHAIN_ID")
                 .map_err(|_| WalletError::Ethereum("ETH_CHAIN_ID not set".to_string()))?
                 .parse::<u64>()
                 .map_err(|_| WalletError::Ethereum("Invalid ETH_CHAIN_ID".to_string()))?;
             
+            if chain_id != 11155111 {
+                println!("⚠️ WARNING: Chain ID {} is not Sepolia (11155111)!", chain_id);
+                println!("This will cause your transaction to fail or be sent to the wrong network!");
+                println!("Update your .env file with ETH_CHAIN_ID=11155111");
+                
+                // Optionally force the correct chain ID
+                // chain_id = 11155111;
+                // println!("Forcing chain ID to 11155111 (Sepolia)");
+            }
+            
             let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
             
-            // Parse transaction data
-            let tx: ethers::types::transaction::eip2718::TypedTransaction = 
-                serde_json::from_str(&tx_data.unwrap())?;
+            // Test RPC connection before sending
+            println!("Testing RPC connection before sending...");
+            eth_client.check_connection().await?;
             
             // Send the transaction with the combined signature
             let tx_hash = eth_client.send_transaction(tx, signature).await?;
             
-            println!("Transaction sent! Hash: {}", tx_hash);
+            let full_tx_hash_str = format!("0x{}", hex::encode(tx_hash.as_bytes()));
+            println!("Transaction sent! Hash: {}", full_tx_hash_str);
             
             Ok(())
         },
         Commands::Balance { address } => {
-            let rpc_url = env::var("ETH_RPC_URL")
-                .map_err(|_| WalletError::Ethereum("ETH_RPC_URL not set".to_string()))?;
-            
-            let chain_id = env::var("ETH_CHAIN_ID")
-                .map_err(|_| WalletError::Ethereum("ETH_CHAIN_ID not set".to_string()))?
-                .parse::<u64>()
-                .map_err(|_| WalletError::Ethereum("Invalid ETH_CHAIN_ID".to_string()))?;
-            
+            // Don't parse the address - just use the string directly
+            let rpc_url = env::var("ETH_RPC_URL").map_err(|e| WalletError::Ethereum(format!("ETH_RPC_URL not set: {}", e)))?;
+            let chain_id = env::var("ETH_CHAIN_ID").map_err(|e| WalletError::Ethereum(format!("ETH_CHAIN_ID not set: {}", e)))?.parse::<u64>().map_err(|e| WalletError::Ethereum(format!("Invalid ETH_CHAIN_ID: {}", e)))?;
             let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
-            
             let balance = eth_client.get_balance(&address).await?;
             let balance_eth = ethers::utils::format_ether(balance);
-            
             println!("Balance of {}: {} ETH", address, balance_eth);
-            
             Ok(())
         },
         Commands::GetAddress { share_id } => {
@@ -393,6 +522,51 @@ async fn main() -> Result<()> {
             let balance_eth = ethers::utils::format_ether(balance);
             
             println!("Balance: {} ETH", balance_eth);
+            
+            Ok(())
+        },
+        Commands::TestConnection {} => {
+            println!("Testing RPC connection...");
+            
+            let rpc_url = env::var("ETH_RPC_URL")
+                .map_err(|_| WalletError::Ethereum("ETH_RPC_URL not set".to_string()))?;
+            
+            let chain_id = env::var("ETH_CHAIN_ID")
+                .map_err(|_| WalletError::Ethereum("ETH_CHAIN_ID not set".to_string()))?
+                .parse::<u64>()
+                .map_err(|_| WalletError::Ethereum("Invalid ETH_CHAIN_ID".to_string()))?;
+            
+            println!("Using RPC URL: {}", rpc_url);
+            println!("Using Chain ID: {}", chain_id);
+            
+            let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
+            eth_client.check_connection().await?;
+            
+            Ok(())
+        },
+        Commands::CheckTransaction { hash } => {
+            let rpc_url = env::var("ETH_RPC_URL")
+                .map_err(|_| WalletError::Ethereum("ETH_RPC_URL not set".to_string()))?;
+            
+            let chain_id = env::var("ETH_CHAIN_ID")
+                .map_err(|_| WalletError::Ethereum("ETH_CHAIN_ID not set".to_string()))?
+                .parse::<u64>()
+                .map_err(|_| WalletError::Ethereum("Invalid ETH_CHAIN_ID".to_string()))?;
+            
+            let eth_client = EthereumClient::new(&rpc_url, chain_id).await?;
+            
+            // Parse the hash string, ensuring it has 0x prefix
+            let hash_str = if !hash.starts_with("0x") {
+                format!("0x{}", hash)
+            } else {
+                hash
+            };
+            
+            // Convert to H256
+            let tx_hash = H256::from_str(&hash_str)
+                .map_err(|e| WalletError::Ethereum(format!("Invalid transaction hash: {}", e)))?;
+            
+            eth_client.check_transaction_status(tx_hash).await?;
             
             Ok(())
         },
