@@ -40,6 +40,7 @@ Replace `sig_1_abcd.json` and `sig_2_abcd.json` with the paths to the signature 
 
 ### Getting Wallet Information
 
+
 To get information about your wallet, including the Ethereum address and balance, run the following command:
 ```
 cargo run -- get-wallet-info --share-id 1
