@@ -9,6 +9,7 @@ This will generate 3 key shares with a threshold of 2, meaning at least 2 shares
 
 ### Signing a Transaction (Round 1)
 
+
 To sign a transaction using a key share, run the following command:
 ```
 cargo run -- sign --share-id 1 --to 0x868263F7D8B5339655E7B3C9097c7b5149099AAf --amount 0.001
