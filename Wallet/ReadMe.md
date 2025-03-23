@@ -1,14 +1,7 @@
 ### Generating Key Shares
 
 To generate key shares for your wallet, run the following command:
-```
 
-To sign a transaction using a key share, run the following command:
-```
-cargo run -- sign --share-id 1 --to 0x868263F7D8B5339655E7B3C9097c7b5149099AAf --amount 0.001
-
-cargo run -- sign --share-id 2 --to 0x868263F7D8B5339655E7B3C9097c7b5149099AAf --amount 0.001
-```
 Replace `1` with the ID of the key share you want to use, `0x123...456` with the recipient's Ethereum address, and `0.01` with the amount of ETH you want to send.
 
 ### Signing a Transaction (Round 2)
