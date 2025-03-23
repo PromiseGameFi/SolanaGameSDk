@@ -4,6 +4,7 @@ To generate key shares for your wallet, run the following command:
 ```
 cargo run -- generate-keys --threshold 2 --shares 3
 ```
+
 This will generate 3 key shares with a threshold of 2, meaning at least 2 shares are required to perform any wallet operations.
 
 ### Signing a Transaction (Round 1)
