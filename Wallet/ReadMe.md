@@ -34,6 +34,7 @@ cargo run -- combine --signature-files sig_1_abcd.json sig_2_abcd.json
 
 cargo run -- combine --signature-files sig_1_tx8678638dab764ba1.json sig_2_tx8678638dab764ba1.json
 
+
 sig_1_ec346bf9.json
 ```
 Replace `sig_1_abcd.json` and `sig_2_abcd.json` with the paths to the signature files generated in Round 2.
