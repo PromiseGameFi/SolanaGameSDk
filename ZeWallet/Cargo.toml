@@ -1,0 +1,14 @@
+[package]
+name = "ze_wallet"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+multi-party-ecdsa = { git = "https://github.com/ZenGo-X/multi-party-ecdsa" }
+curv-kzen = "0.9"
+web3 = "0.18"
+tokio = { version = "1.0", features = ["full"] }
+structopt = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
